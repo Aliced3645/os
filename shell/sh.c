@@ -7,6 +7,9 @@
 #include <memory.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 #define MAX_LENGTH 256
 #define GENERAL_ERROR -255
@@ -80,33 +83,24 @@ int process_builtin(){
     
     if(commandline == NULL)
         return NULL_STRING;
-    
     //get the first word.
     char* first_word = NULL;
     size_t space_pointer = 0;
-    for(; space_pointer < strlen(commandline); space_pointer ++){
-        if(commandline[space_pointer] == ' '){
+    for(; space_pointer < strlen(commandline) + 1; space_pointer ++){
+        if(commandline[space_pointer] == ' ' || commandline[space_pointer] == '\0'){
             //get the first word and break the loop.
-            first_word = malloc(space_pointer);
+            first_word = malloc(space_pointer + 1);
             first_word = strncpy(first_word, commandline, space_pointer);
+            first_word[space_pointer] = '\0';
             break;
         }
     }
 
-    if(first_word == NULL){
-        //there is no space in the string, test the string as a whole
-        //only see whether it is "exit"
-        if( strcmp(commandline,"exit") != 0)
-            return NOT_BUILTIN;
-        else{
-            //exit the shell
+        //parse and process the first word
+        if(!strcmp(first_word, "exit")){
             exit(1);
         }
-    }
-
-    else{
-        //parse and process the first word
-        if(!strcmp(first_word, "ln")){
+        else if(!strcmp(first_word, "ln")){
             printf("ln detected\n");
             return 0;
         }
@@ -121,7 +115,8 @@ int process_builtin(){
         else{
             return NOT_BUILTIN;
         }
-    }
+
+    free(first_word);
     return BUILTIN_EXCUTE_ERROR;
 }
 
@@ -133,7 +128,6 @@ int eliminate_dup_tab_spaces(char* string){
             fast ++;
     }
         
-
     while(fast < strlen(string)){
 
         //ignore all precedent space or tabs
@@ -160,7 +154,10 @@ int eliminate_dup_tab_spaces(char* string){
         }
     }
     //at last.
-    string[slow] = '\0';
+    if(string[slow - 1] == ' ')
+        string[slow - 1] = '\0';
+    else
+        string[slow] = '\0';
     //printf("%s\n", string);
     return 0;
 }
@@ -374,7 +371,7 @@ int split_to_parts(){
     return 0;
 }
 
-int parse_command(){
+int parse_commandline(){
     //get the redirection symbol and partition the file
     //get all parts.
     int res = split_to_parts();
@@ -387,6 +384,7 @@ int parse_command(){
     if(input != NULL){
         printf("input: %s\n", input);
     }
+
     printf("output: \n");
     struct output* traverser = outputs;
     while(traverser != NULL){
@@ -397,11 +395,12 @@ int parse_command(){
     return 0;
 }
 
+
 //this function deal with comman processing
 //which is the core function of the shell
 //return 0 for success
 //any minus returned values represents errors
-int process_command(){
+int process_commandline(){
     
     eliminate_dup_tab_spaces(commandline);   
     //check whether build-in command
@@ -412,12 +411,67 @@ int process_command(){
         if(process_builtin_result == NOT_BUILTIN){
             //do the general command parsing
             //and do the corresponding actions
-            int res = parse_command();   
+            int res = parse_commandline();   
             if(res < 0){
                 return res;
             }
             else{
                 //execute the commands
+                //parse the command first to extract path and arguments
+                char* pathname = NULL;
+                //iterate to cound how many args.
+                int args_count = 0;
+                for(size_t i = 0; i < strlen(command); i ++){
+                    if(command[i] == ' ' && command[i-1] != '\\'){
+                        args_count ++;       
+                    }
+                }
+                //create the args list
+                char* args[args_count + 2];
+                //second iteration
+                int command_encountered = 0;
+                size_t start = 0;
+                int args_pointer = 1;
+                size_t length = 0;
+                for(size_t i = 0; i < strlen(command) + 1; i ++){
+                    if( (command[i] == ' ' && command[i - 1] != '\\') || (command[i] == '\0')){
+                        length = i - start + 1;
+                        if(command_encountered == 0){
+                            pathname = (char*) malloc(length);
+                            memcpy(pathname, command + start, length);
+                            pathname[length - 1] = '\0';
+                            command_encountered = 1;
+                            args[0] = pathname;
+                        }
+                        else{
+                            args[args_pointer] = (char*) malloc( length );
+                            memcpy(args[args_pointer], command + start, length);
+                            args[args_pointer][length - 1] = '\0';
+                            args_pointer ++;
+                        }
+                        start = i + 1;
+                    }
+                }
+                args[args_count + 1] = NULL;
+                //print the parts to see whether we it has parsed good
+                fflush(NULL);
+                //now, execute the program
+                pid_t pid;
+                if( (pid = fork()) == 0){
+                    int res;
+                    res = execve(pathname, args, NULL);
+                    if(res < 0){
+                        printf("Error in executing the file : %s\n", strerror(errno));
+                    }
+                    exit(1);    
+                }
+                else{
+                    while(pid != wait(0));
+                }
+
+                for(int i = 0; i < args_count; i ++){
+                    free(args[i]);
+                }
             }
         }
         else{
@@ -464,7 +518,7 @@ int main(int argc, char *argv[])
             //change '\n' to '\0'
             commandline[byte_read-1] = '\0';
              
-            int res = process_command();
+            int res = process_commandline();
             if(res != 0){
                 //something wrond.
                 error_handler(res); 
