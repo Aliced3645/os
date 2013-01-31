@@ -91,20 +91,22 @@ static void signal_handler(int signo){
 //this function is for dealing with the command of if is built-in command
 //if it is built in and successes return 
 //if it is not built in or other failures, return corresponding error code
+void free_all_resources();
 
 int process_builtin(){
     
-    if(commandline == NULL)
+    if(command == NULL)
         return NULL_STRING;
     //get the first word.
+    eliminate_dup_tab_spaces(command);
     char* first_word = NULL;
     size_t space_pointer = 0;
     size_t start = 0;
-    for(; space_pointer < strlen(commandline) + 1; space_pointer ++){
-        if(commandline[space_pointer] == ' ' || commandline[space_pointer] == '\0'){
+    for(; space_pointer < strlen(command) + 1; space_pointer ++){
+        if(command[space_pointer] == ' ' || command[space_pointer] == '\0'){
             //get the first word and break the loop.
             first_word = malloc(space_pointer + 1);
-            first_word = strncpy(first_word, commandline, space_pointer);
+            first_word = strncpy(first_word, command, space_pointer);
             first_word[space_pointer] = '\0';
             break;
         }
@@ -112,6 +114,8 @@ int process_builtin(){
         start = space_pointer + 1;    
         //parse and process the first word
         if(!strcmp(first_word, "exit")){
+            free_all_resources();
+            free(first_word);
             exit(1);
         }
 
@@ -119,18 +123,18 @@ int process_builtin(){
             char* src = NULL;
             char* dest = NULL;
             size_t length = 0;
-            for(size_t i = start; i < strlen(commandline) + 1; i ++){
-                if(commandline[i] == ' ' || commandline[i] == '\0'){
+            for(size_t i = start; i < strlen(command) + 1; i ++){
+                if(command[i] == ' ' || command[i] == '\0'){
                     length = i - start + 1;
                     
                     if(src == NULL){
                         src = (char*) malloc(length);
-                        memcpy(src, commandline + start, length);
+                        memcpy(src, command + start, length);
                         src[length - 1] = '\0';
                     }
                     else if(dest == NULL){
                         dest = (char*)malloc(length);
-                        memcpy(dest, commandline + start, length);
+                        memcpy(dest, command + start, length);
                         dest[length - 1] = '\0';
                     }
                     start = i + 1;
@@ -145,6 +149,7 @@ int process_builtin(){
 
             free(src);
             free(dest);
+            free(first_word);
             return 0;
         }
 
@@ -152,15 +157,14 @@ int process_builtin(){
         else if(!strcmp(first_word, "cd")){
             char* dest = NULL;
             size_t length = 0;
-            for(size_t i = start; i < strlen(commandline) + 1; i ++){
-                if(commandline[i] == ' ' || commandline[i] == '\0'){
+            for(size_t i = start; i < strlen(command) + 1; i ++){
+                if(command[i] == ' ' || command[i] == '\0'){
                     length = i - start + 1;
                     dest = (char*) malloc ( length);
-                    memcpy(dest, commandline + start, length);
+                    memcpy(dest, command + start, length);
                     dest[length - 1] = '\0';
                 }
             }
-
             //now, chdir
             int res = chdir(dest);
             if(res < 0){
@@ -168,17 +172,18 @@ int process_builtin(){
                 write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
             }
             free(dest);
+            free(first_word);
             return 0;
         }
 
         else if(!strcmp(first_word, "rm")){
             char* dest = NULL;
             size_t length = 0;
-            for(size_t i = start; i < strlen(commandline) + 1; i ++){
-                if(commandline[i] == ' ' || commandline[i] == '\0'){
+            for(size_t i = start; i < strlen(command) + 1; i ++){
+                if(command[i] == ' ' || command[i] == '\0'){
                     length = i - start + 1;
                     dest = (char*) malloc ( length);
-                    memcpy(dest, commandline + start, length);
+                    memcpy(dest, command + start, length);
                     dest[length - 1] = '\0';
                 }
             }
@@ -190,10 +195,12 @@ int process_builtin(){
                 write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
             }
             free(dest);
+            free(first_word);
             return 0;
         }
 
         else{
+            free(first_word);
             return NOT_BUILTIN;
         }
     
@@ -503,20 +510,19 @@ int parse_commandline(){
 int process_commandline(){
     
     eliminate_dup_tab_spaces(commandline);   
+    //parse the command first 
+    int res = parse_commandline();   
+    if(res < 0){
+        return res;
+    }
     //check whether build-in command
     int process_builtin_result = process_builtin();
     if(process_builtin_result == 0)
         return 0;
-    else{
-        if(process_builtin_result == NOT_BUILTIN){
+    else if(process_builtin_result == NOT_BUILTIN){
             //do the general command parsing
             //and do the corresponding actions
-            int res = parse_commandline();   
-            if(res < 0){
-                return res;
-            }
-            else{
-                //execute the commands
+            //execute the commands
                 //parse the command first to extract path and arguments
                 char* pathname = NULL;
                 //iterate to cound how many args.
@@ -609,16 +615,14 @@ int process_commandline(){
                     while(pid != wait(0));
                 }
 
-                for(int i = 0; i < args_count; i ++){
+                for(int i = 0; i <=args_count; i ++){
                     free(args[i]);
                 }
             }
-        }
         else{
             //other errors..
             return process_builtin_result;
         }
-    }
     return 0;
 }
 
@@ -642,6 +646,15 @@ void refresh_buffers(){
     input_detected = 0;
     output_detected = 0;
 
+}
+
+
+void free_all_resources(){
+    free(commandline);
+    free(command);
+    free(input);
+    clear_outputs();
+    return;
 }
 
 int main(int argc, char *argv[])
@@ -680,6 +693,7 @@ int main(int argc, char *argv[])
             //if nothing, means CTRL+D, exit
             if(byte_read == 0){
                 refresh_buffers();
+                free_all_resources();
                 exit(1);
             }
 
