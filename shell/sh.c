@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <signal.h>
 
 #define MAX_LENGTH 256
 #define GENERAL_ERROR -255
@@ -27,12 +28,16 @@ char* error_strings[] = {"SUCCESS", "The string is null", "This comand is not a 
                          "The command is empty, cannot execute", "No name for redirection file", 
                          "The commandline has a syntax error", "More than one type of commands"};
 
+char error_buffer[MAX_LENGTH];
 int eliminate_dup_tab_spaces(char* string);
 int eliminate_tab_spaces(char* string);
 
 char* commandline = NULL;
 char* command = NULL;
 char* input = NULL;
+int input_detected = 0;
+int output_detected = 0;
+
 
 struct output{
     char* file_name;
@@ -75,6 +80,14 @@ void clear_outputs(){
     outputs = NULL;
 }
 
+//signal handler to catch ctrl+c
+static void signal_handler(int signo){
+    sprintf(error_buffer, "\ncaptured a signal : %d\n", signo);
+    write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 2);
+    memset(error_buffer, 0, MAX_LENGTH);
+    return;
+}
+
 //this function is for dealing with the command of if is built-in command
 //if it is built in and successes return 
 //if it is not built in or other failures, return corresponding error code
@@ -86,6 +99,7 @@ int process_builtin(){
     //get the first word.
     char* first_word = NULL;
     size_t space_pointer = 0;
+    size_t start = 0;
     for(; space_pointer < strlen(commandline) + 1; space_pointer ++){
         if(commandline[space_pointer] == ' ' || commandline[space_pointer] == '\0'){
             //get the first word and break the loop.
@@ -95,27 +109,94 @@ int process_builtin(){
             break;
         }
     }
-
+        start = space_pointer + 1;    
         //parse and process the first word
         if(!strcmp(first_word, "exit")){
             exit(1);
         }
+
         else if(!strcmp(first_word, "ln")){
-            printf("ln detected\n");
+            char* src = NULL;
+            char* dest = NULL;
+            size_t length = 0;
+            for(size_t i = start; i < strlen(commandline) + 1; i ++){
+                if(commandline[i] == ' ' || commandline[i] == '\0'){
+                    length = i - start + 1;
+                    
+                    if(src == NULL){
+                        src = (char*) malloc(length);
+                        memcpy(src, commandline + start, length);
+                        src[length - 1] = '\0';
+                    }
+                    else if(dest == NULL){
+                        dest = (char*)malloc(length);
+                        memcpy(dest, commandline + start, length);
+                        dest[length - 1] = '\0';
+                    }
+                    start = i + 1;
+                }
+            }
+            //now, make a hard link to a file
+            int res = link(src, dest);
+            if(res < 0){
+                sprintf(error_buffer, "Link Error: %s\n", strerror(errno));
+                write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+            }
+
+            free(src);
+            free(dest);
             return 0;
         }
+
+
         else if(!strcmp(first_word, "cd")){
-            printf("cd detected\n");
+            char* dest = NULL;
+            size_t length = 0;
+            for(size_t i = start; i < strlen(commandline) + 1; i ++){
+                if(commandline[i] == ' ' || commandline[i] == '\0'){
+                    length = i - start + 1;
+                    dest = (char*) malloc ( length);
+                    memcpy(dest, commandline + start, length);
+                    dest[length - 1] = '\0';
+                }
+            }
+
+            //now, chdir
+            int res = chdir(dest);
+            if(res < 0){
+                sprintf(error_buffer, "CD Error: %s\n", strerror(errno));
+                write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+            }
+            free(dest);
             return 0;
         }
+
         else if(!strcmp(first_word, "rm")){
-            printf("rm detected\n");
+            char* dest = NULL;
+            size_t length = 0;
+            for(size_t i = start; i < strlen(commandline) + 1; i ++){
+                if(commandline[i] == ' ' || commandline[i] == '\0'){
+                    length = i - start + 1;
+                    dest = (char*) malloc ( length);
+                    memcpy(dest, commandline + start, length);
+                    dest[length - 1] = '\0';
+                }
+            }
+
+            //now, chdir
+            int res = unlink(dest);
+            if(res < 0){
+                sprintf(error_buffer, "Delete Error: %s\n", strerror(errno));
+                write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+            }
+            free(dest);
             return 0;
         }
+
         else{
             return NOT_BUILTIN;
         }
-
+    
     free(first_word);
     return BUILTIN_EXCUTE_ERROR;
 }
@@ -158,7 +239,6 @@ int eliminate_dup_tab_spaces(char* string){
         string[slow - 1] = '\0';
     else
         string[slow] = '\0';
-    //printf("%s\n", string);
     return 0;
 }
 
@@ -191,6 +271,7 @@ int eliminate_tab_spaces(char* string){
 int split_to_parts(){
     
     int input_appeared = 0;   
+    int output_count = 0;
     size_t probe = 0;
     int command_appeared = 0;
     size_t length = 0;
@@ -222,6 +303,8 @@ int split_to_parts(){
     while(probe < MAX_LENGTH){
 
         length = probe - start + 1;
+
+        //the char is space as a separator
         if((commandline[probe] == ' ' && commandline[probe - 1] != '\\')){
             char previous_char = commandline[probe - 1];
             if(previous_char == '<' || previous_char == '>'){
@@ -235,6 +318,8 @@ int split_to_parts(){
                 memcpy(name, commandline + start, length);
                 name[length - 1] = '\0';
                 int res = add_output(name, 0);
+                output_count ++;
+                output_detected = 1;               
                 if(res  <  0){
                     return res;
                 }
@@ -245,6 +330,7 @@ int split_to_parts(){
                 memcpy(input, commandline + start, length);
                 input[length - 1] = '\0';
                 eliminate_tab_spaces(input);
+                input_detected = 1;
                 if(strlen(input) == 0)
                     return EMPTY_REDIRECTION_FILE;
             }
@@ -253,6 +339,8 @@ int split_to_parts(){
                 char* name = (char*) malloc(length);
                 memcpy(name, commandline + start, length);
                 name[length - 1] = '\0';
+                output_count ++;
+                output_detected = 1;
                 int res = add_output(name, 1);
                 if( res < 0)
                     return res;
@@ -295,6 +383,7 @@ int split_to_parts(){
             }
         }
 
+        //the char is redirection symbol or end
         else if(commandline[probe] == '>' || commandline[probe] == '<' || commandline[probe] == '\0'){
             
             //do partition
@@ -305,6 +394,8 @@ int split_to_parts(){
                 memcpy(name, commandline + start, length);
                 name[length - 1] = '\0';
                 int res = add_output(name, 0);
+                output_count ++;
+                output_detected = 1;
                 if(res  <  0){
                     return res;
                 }
@@ -314,6 +405,7 @@ int split_to_parts(){
                 memcpy(input, commandline + start, length);
                 input[length - 1] = '\0';
                 eliminate_tab_spaces(input);
+                input_detected = 1;
                 if(strlen(input) == 0)
                     return EMPTY_REDIRECTION_FILE;
             }
@@ -321,12 +413,15 @@ int split_to_parts(){
                 char* name = (char*) malloc(length);
                 memcpy(name, commandline + start, length);
                 name[length - 1] = '\0';
+                output_count ++;
+                output_detected = 1;
                 int res = add_output(name, 1);
                 if( res < 0)
                     return res;
             }
             else{
                 if(command_appeared == 0){
+                    memset(command, 0, MAX_LENGTH);
                     memcpy(command, commandline+start, length);
                     command[length -1] = '\0';
                     command_appeared = 1;
@@ -357,12 +452,18 @@ int split_to_parts(){
                     return EMPTY_COMMAND;
                 }
                 else{
+                    if(output_count > 1){
+                        sprintf(error_buffer,"WARNING: multiple output files detected, only redirect to the last one.\n");
+                        write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 2);
+                        memset(error_buffer,0,MAX_LENGTH);
+                    }
                     return 0;
                 }
             }
             probe ++;
             start = probe;
         }
+
         //ordinary alphanumeric chars
         else{
             probe ++;
@@ -378,20 +479,19 @@ int parse_commandline(){
     if(res < 0){
         return res;
     }
-
+    /*  
     //print the parts.
     printf("command: %s\n", command);
     if(input != NULL){
         printf("input: %s\n", input);
     }
-
     printf("output: \n");
     struct output* traverser = outputs;
     while(traverser != NULL){
-        printf("  %s\n",traverser->file_name);
+        printf("  %s : %d\n",traverser->file_name, traverser->append);
         traverser = traverser -> next;
     }
-
+    */
     return 0;
 }
 
@@ -421,6 +521,7 @@ int process_commandline(){
                 char* pathname = NULL;
                 //iterate to cound how many args.
                 int args_count = 0;
+                eliminate_dup_tab_spaces(command);
                 for(size_t i = 0; i < strlen(command); i ++){
                     if(command[i] == ' ' && command[i-1] != '\\'){
                         args_count ++;       
@@ -459,10 +560,49 @@ int process_commandline(){
                 pid_t pid;
                 if( (pid = fork()) == 0){
                     int res;
-                    res = execve(pathname, args, NULL);
-                    if(res < 0){
-                        printf("Error in executing the file : %s\n", strerror(errno));
+                    int output_fd = -1;
+                    int input_fd = -1;
+                    //set redirections
+                      
+                    if(input_detected == 1){
+                        close(STDIN_FILENO);
+                        input_fd = open(input, O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+                        if(input_fd < 0){
+                            sprintf(error_buffer, "Error in creating or appending the file : %s\n", strerror(errno));
+                            write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+                            memset(error_buffer, 0, MAX_LENGTH);
+                            exit(1);
+                        }
                     }
+                    
+                    if(output_detected == 1){
+                        close(STDOUT_FILENO);
+                        //get the output
+                        if(outputs->append == 0){
+                            output_fd = open(outputs->file_name, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
+                        }
+                        else if(outputs -> append == 1){
+                            output_fd = open(outputs->file_name, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP  );
+                        }
+
+                        if(output_fd < 0){
+                            //error creating the file
+                             sprintf(error_buffer, "Error in creating or appending the file : %s\n", strerror(errno));
+                             write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+                             memset(error_buffer, 0, MAX_LENGTH);
+			     exit(1);
+                        }
+                    }
+                    //char* envp[] = {"PATH=/bin/",NULL};
+                    //execvp can automatically search PATH variable.
+                    res = execvp(pathname, args);
+                    //res = execve(pathname, args, envp);
+                    if(res < 0){
+                        sprintf(error_buffer, "Error in executing the file : %s\n", strerror(errno));
+			write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+                        memset(error_buffer, 0, MAX_LENGTH);
+                    }
+
                     exit(1);    
                 }
                 else{
@@ -479,22 +619,29 @@ int process_commandline(){
             return process_builtin_result;
         }
     }
-
     return 0;
 }
+
 
 void error_handler(int error_code){
     fflush(NULL);
     int error_string_entry_index = abs(error_code);
-    printf("Error Number %d : %s\n", error_code, error_strings[error_string_entry_index]);
+    sprintf(error_buffer, "Error Number %d : %s\n", error_code, error_strings[error_string_entry_index]);
+    write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+    memset(error_buffer, 0, MAX_LENGTH);
     return;
 }
 
 void refresh_buffers(){
+
     memset(commandline, 0, MAX_LENGTH); 
     memset(command, 0, MAX_LENGTH);
     memset(input, 0, MAX_LENGTH);
+    memset(error_buffer, 0, MAX_LENGTH);
     clear_outputs();
+    input_detected = 0;
+    output_detected = 0;
+
 }
 
 int main(int argc, char *argv[])
@@ -502,19 +649,46 @@ int main(int argc, char *argv[])
 	/* Go crazy! */
         if(argc == 0)
             return -1;
-        
-        for(int i = 0; i < argc - 1; i ++)
-            printf(argv[i]);
+	
+	for(int i = 1; i < argc - 1; i ++){
+	      
+   		write(STDOUT_FILENO, argv, strlen(error_buffer) + 1);
+    		memset(error_buffer, 0, MAX_LENGTH);
+	}        
+	
         //initialize global strings
-        
         commandline = (char*)malloc(MAX_LENGTH);
         command = (char*) malloc(MAX_LENGTH);
         input = (char*) malloc(MAX_LENGTH);
         refresh_buffers();
 
         while(1){
+        //signals
+        signal(SIGINT, signal_handler);
+        signal(SIGTSTP, signal_handler);
+#ifndef NO_PROMPT
+            if(write(STDOUT_FILENO, "$ ", 2) < 0){
+                sprintf(error_buffer, "Prompt Printing Error: %s\n", strerror(errno));
+                write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
+                refresh_buffers();
+            }
+#endif
             //the byte_read includes the '\0'
             int byte_read = read(STDIN_FILENO, commandline, MAX_LENGTH);
+            //check whether the last is ctrl + D
+            //if it is a CTRL + D, the last byte would not be '\n'
+            //if nothing, means CTRL+D, exit
+            if(byte_read == 0){
+                refresh_buffers();
+                exit(1);
+            }
+
+            if( commandline[byte_read - 1] != 10){
+                refresh_buffers();
+                write(STDOUT_FILENO, "\n", 2);
+                continue;
+            }
+
             //change '\n' to '\0'
             commandline[byte_read-1] = '\0';
              
