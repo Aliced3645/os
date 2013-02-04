@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <signal.h>
 
-#define MAX_LENGTH 256
+#define MAX_LENGTH 512
 #define GENERAL_ERROR -255
 #define NULL_STRING -1
 #define NOT_BUILTIN -2
@@ -22,6 +22,8 @@
 #define EMPTY_REDIRECTION_FILE -6
 #define COMMANDLINE_SYNTAX_ERROR -7
 #define REDUNDANT_COMMANDS -8
+
+//#define DEBUG
 
 char* error_strings[] = {"SUCCESS", "The string is null", "This comand is not a built-in command", 
                          "Error occurs in executing the command", "Redundant input redirection files",
@@ -38,14 +40,18 @@ char* input = NULL;
 int input_detected = 0;
 int output_detected = 0;
 
-
+//Originally, I think multiple outputs could be used,
+//but then I found that even unix shell does not support it, but it allows the
+//syntax of using multiple output redirection symbol
+//so I still use a linked list to save all outputs
+//but the shell only redirect output to the last redirected file detected.
 struct output{
     char* file_name;
     //0 for '<', 1 for '<<'
     int append;
     struct output* next;
 };
-
+//the linked list header
 struct output* outputs = NULL;
 //utility functions for output linked lists
 //add a output file name
@@ -63,7 +69,6 @@ int add_output(char* name, int _append){
     //append at the head
     to_add -> next = outputs;
     outputs = to_add;
-    
     return 0;
 }
 
@@ -486,7 +491,7 @@ int parse_commandline(){
     if(res < 0){
         return res;
     }
-    /*  
+#ifdef DEBUG  
     //print the parts.
     printf("command: %s\n", command);
     if(input != NULL){
@@ -498,7 +503,8 @@ int parse_commandline(){
         printf("  %s : %d\n",traverser->file_name, traverser->append);
         traverser = traverser -> next;
     }
-    */
+#endif
+
     return 0;
 }
 
@@ -599,10 +605,10 @@ int process_commandline(){
 			     exit(1);
                         }
                     }
-                    //char* envp[] = {"PATH=/bin/",NULL};
-                    //execvp can automatically search PATH variable.
-                    res = execvp(pathname, args);
-                    //res = execve(pathname, args, envp);
+                    char* envp[] = {"PATH=/bin/",NULL};
+                    /////execvp can automatically search PATH variable.
+                    //res = execvp(pathname, args);
+                    res = execve(pathname, args, envp);
                     if(res < 0){
                         sprintf(error_buffer, "Error in executing the file : %s\n", strerror(errno));
 			write(STDERR_FILENO, error_buffer, strlen(error_buffer) + 1);
