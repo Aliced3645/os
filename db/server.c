@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /*
  * TODO (Part 2): This function should be implemented and called by client
@@ -85,14 +86,17 @@ static void DeleteAll(void);
  *
  * TODO (Part 3): See the comment in RunClient about a barrier.
  */
+int client_counter = 0;
 static Client_t *
-Client_constructor(int ID)
+Client_constructor()
 {
+
 	char title[16];
 	Client_t *new_Client = malloc(sizeof (Client_t));
 	if (new_Client == NULL)
 		return (NULL);
-	sprintf(title, "Client %d", ID);
+	sprintf(title, "Client %d", client_counter);
+        client_counter ++;
 
 	/*
 	 * This constructor creates a window and sets up a communication
@@ -416,7 +420,7 @@ SigMon(void *arg) {
 int
 main(int argc, char *argv[])
 {
-	Client_t *c;
+	//Client_t *c;
 	SigHandler_t *sig_handler;
 
 	if (argc == 2) {
@@ -427,11 +431,20 @@ main(int argc, char *argv[])
 	}
 
 	sig_handler = SigHandler_constructor();
-
+        
+        while(1){
+            //capture user action(pressing enter)
+            int character = getchar();
+            if(character == 10){
+                
+            }
+        }
+        /*
 	c = Client_constructor(0);
+          
 	RunClient(c);
 	Client_destructor(c);
-
+        */
 	SigHandler_destructor(sig_handler);
 
 	DeleteAll();

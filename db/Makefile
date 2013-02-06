@@ -1,7 +1,7 @@
 CC=gcc
 
 # Be sure to add the appropriate flag(s) for multithreaded programs.
-CFLAGS=-g3 -Wall -Wextra -Werror -pedantic -pthread \
+CFLAGS= -D_REENTRANT -g3 -Wall -Wextra -Werror -pedantic \
 	-Wconversion -Wcast-qual -Wcast-align -Winline -Wfloat-equal \
 	-Wnested-externs -Wno-unused-function -Wno-unused-parameter \
 	-std=c99
@@ -9,7 +9,7 @@ CFLAGS=-g3 -Wall -Wextra -Werror -pedantic -pthread \
 all: server interface
 
 server: server.o db.o window.o
-	$(CC) $(CFLAGS) server.o db.o window.o -o server
+	$(CC) $(CFLAGS) -o server server.o db.o window.o -lpthread
 
 server.o: server.c window.h db.h
 	$(CC) server.c -c $(CFLAGS)
