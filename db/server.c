@@ -67,7 +67,9 @@ typedef struct Client {
 	struct Client *next;
 } Client_t;
 
-Client_t *ThreadListHead;
+Client_t *ThreadListHead = NULL;
+Client_t *ThreadListTail = NULL;
+
 #ifdef _PTHREAD_H
 pthread_mutex_t ThreadListMutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
@@ -76,6 +78,88 @@ static void *RunClient(void *);
 static int handle_command(const char *, char *, size_t);
 static void ThreadCleanup(void *);
 static void DeleteAll(void);
+static void Client_destructor(Client_t* client);
+
+
+//print all clients
+void PrintAllThreads(){
+    Client_t* traverser = ThreadListHead;
+    while(traverser != NULL){
+        printf("%d\n", (int)traverser -> thread);
+        traverser = traverser -> next;
+    }
+}
+//helper function, add to linkedlist of Client_t
+void AddThreadList(Client_t* client){
+
+    if(ThreadListHead == NULL){
+        ThreadListHead = ThreadListTail = client;
+        return;
+    }
+    else{
+        ThreadListTail -> next = client;
+        client->prev = ThreadListTail;
+        ThreadListTail = client;
+    }
+    return;
+}
+
+//return 0 if success
+//return -1 if target not found
+int DeleteThreadFromList(Client_t* client){
+
+    //special case happens in the head
+    if(ThreadListHead == NULL)
+        return -1;
+    else if(ThreadListHead == ThreadListTail){
+        if(ThreadListTail == client){
+            Client_destructor(client);
+            ThreadListTail = ThreadListHead = NULL;
+            return 0;
+        }
+    }
+    else{
+        Client_t* slow = ThreadListHead;
+        Client_t* fast = ThreadListHead -> next;
+        //take care of the first
+        if(slow == client){
+            fast ->prev = NULL;
+            ThreadListHead = fast;
+            Client_destructor(client);
+            return 0;
+        }
+
+        while(fast != NULL){
+            if(fast == client){
+                slow->next = fast->next;
+                if(fast != ThreadListTail){
+                    fast->next->prev = slow;
+                }
+                else{
+                    ThreadListTail = slow;
+                }
+
+                Client_destructor(client);
+                return 0;
+            }
+        }
+    }
+
+    return -1;
+}
+
+void DeleteAllClients(){
+    //delete all threads
+    Client_t* traverser = ThreadListHead;
+    while(traverser != NULL){
+        Client_t* todelete = traverser;
+        traverser = traverser -> next;
+        Client_destructor(todelete);
+    }
+    ThreadListHead = ThreadListTail = NULL;
+    return;
+}
+
 
 /*
  * TODO (Part 1): Modify this function such that a new thread is created and
@@ -91,20 +175,31 @@ static Client_t *
 Client_constructor()
 {
 
-	char title[16];
+        char title[16];
 	Client_t *new_Client = malloc(sizeof (Client_t));
 	if (new_Client == NULL)
 		return (NULL);
 	sprintf(title, "Client %d", client_counter);
-        client_counter ++;
-
+                
 	/*
 	 * This constructor creates a window and sets up a communication
 	 * channel with it.
 	 */
 	new_Client->win = window_constructor(title);
 
-	return (new_Client);
+	//return (new_Client);
+        int res = pthread_create(&new_Client->thread, NULL, RunClient, new_Client);
+        if(res != 0){
+            printf("Error creating client thread: %s\n", strerror(errno));
+            //clean the client structure
+            Client_destructor(new_Client);
+            return NULL;
+        }
+        client_counter ++;
+        //also add to the link list
+
+        return new_Client;
+        
 }
 
 static void
@@ -112,7 +207,6 @@ Client_destructor(Client_t *client)
 {
 	/* The destructor removes the window. */
 	window_destructor(client->win);
-
 	free(client);
 }
 
@@ -417,6 +511,8 @@ SigMon(void *arg) {
  * you're running server), a new window is created along with a new thread to
  * handle it.
  */
+#define MAX_LENGTH 255
+
 int
 main(int argc, char *argv[])
 {
@@ -432,20 +528,29 @@ main(int argc, char *argv[])
 
 	sig_handler = SigHandler_constructor();
         
+        char* command = (char*) malloc(MAX_LENGTH);
+        
         while(1){
             //capture user action(pressing enter)
-            int character = getchar();
-            if(character == 10){
-                
+            int byte_read = read(STDIN_FILENO, command, MAX_LENGTH);
+            if(byte_read == 0){
+                //CTRL+D
+                printf("asdf\n");
+                DeleteAllClients();
+                exit(1);
             }
+            else if(command[byte_read - 1 ] == 10){
+                Client_t* new_client = Client_constructor();
+                AddThreadList(new_client);
+            }
+
+            else{
+                write(STDOUT_FILENO, "\n", 2);
+            }
+            memset(command, MAX_LENGTH, 0);
         }
-        /*
-	c = Client_constructor(0);
-          
-	RunClient(c);
-	Client_destructor(c);
-        */
-	SigHandler_destructor(sig_handler);
+
+        SigHandler_destructor(sig_handler);
 
 	DeleteAll();
 
