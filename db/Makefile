@@ -1,7 +1,7 @@
 CC=gcc
 
 # Be sure to add the appropriate flag(s) for multithreaded programs.
-CFLAGS=-g3 -Wall -Wextra -Werror -pedantic \
+CFLAGS=-g3 -Wall -Wextra -Werror -pedantic -pthread \
 	-Wconversion -Wcast-qual -Wcast-align -Winline -Wfloat-equal \
 	-Wnested-externs -Wno-unused-function -Wno-unused-parameter \
 	-std=c99
