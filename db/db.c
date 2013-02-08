@@ -8,6 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+//mutex for the entire tree for stop and go
+
 Node_t head = {"", "", NULL, NULL};
 
 static Node_t *search(const char *, Node_t *, Node_t **);

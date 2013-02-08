@@ -23,9 +23,21 @@
  * left locked if the thread is cancelled while waiting on a condition
  * variable.
  */
+
+//a global flag indicating whether clients can handle input..
+int clientBlock = 0;//1 if block
+pthread_mutex_t clientBlockLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t clientBlockCond = PTHREAD_COND_INITIALIZER;
+
 static void
 ClientControl_wait(void) {
-	/* TODO (Part 2): Not yet implemented. */
+    /* TODO (Part 2): Not yet implemented. */
+    pthread_mutex_lock(&clientBlockLock);
+    while(clientBlock == 1){
+        //here we should waiting
+        pthread_cond_wait(&clientBlockCond, &clientBlockLock);
+    }
+    pthread_mutex_unlock(&clientBlockLock);
 }
 
 /*
@@ -35,6 +47,10 @@ ClientControl_wait(void) {
 static void
 ClientControl_stop(void) {
 	/* TODO (Part 2): Not yet implemented. */
+     //just set the bit to 1
+     pthread_mutex_lock(&clientBlockLock);
+     clientBlock = 1;
+     pthread_mutex_unlock(&clientBlockLock);
 }
 
 /*
@@ -44,6 +60,11 @@ ClientControl_stop(void) {
 static void
 ClientControl_release(void) {
 	/* TODO (Part 2): Not yet implemented. */
+    pthread_mutex_lock(&clientBlockLock);
+    clientBlock = 0;
+    pthread_mutex_unlock(&clientBlockLock);
+    //notify all
+    pthread_cond_broadcast(&clientBlockCond);
 }
 
 /*
@@ -340,7 +361,10 @@ RunClient(void *arg)
 	 * main loop of the client: fetch commands from window, interpret and
 	 * handle them, return results to window
 	 */
+        while(1)
 	{
+
+                ClientControl_wait();
 		char command[256];
 		/* response must be NULL for the first call to serve */
 		char response[256] = {0};
@@ -360,7 +384,7 @@ RunClient(void *arg)
 			Timeout_reset(timeout);
 		}
 	}
-
+        
 	return (NULL);
 }
 
@@ -412,8 +436,7 @@ Timeout_WatchDog(void *arg)
 
 	while (1) {
 		struct timeval now;
-
-		/*
+                /*
 		 * sleep for the current timeout interval
 		 * (since thread was started or last input)
 		 */
@@ -539,11 +562,17 @@ main(int argc, char *argv[])
                 DeleteAllClients();
                 exit(1);
             }
+            else if(command[0] == 's' && command[1] == '\n'){
+                ClientControl_stop();
+            }
+            else if(command[0] == 'g' && command[1] == '\n'){
+                ClientControl_release();
+            }
             else if(command[byte_read - 1 ] == 10){
                 Client_t* new_client = Client_constructor();
                 AddThreadList(new_client);
+                pthread_detach(new_client->thread);
             }
-
             else{
                 write(STDOUT_FILENO, "\n", 2);
             }
