@@ -7,9 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <pthread.h>
 
 //mutex for the entire tree for stop and go
+//coarse grained lock
+pthread_rwlock_t coarseDBLock;
 
 Node_t head = {"", "", NULL, NULL};
 
@@ -52,8 +54,9 @@ static void
 query(const char *name, char *result, size_t len)
 {
 	Node_t *target;
-
+        pthread_rwlock_rdlock(&coarseDBLock);       
 	target = search(name, &head, NULL);
+        pthread_rwlock_unlock(&coarseDBLock);
 	if (target == NULL) {
 		strncpy(result, "not found", len-1);
 		return;
@@ -66,18 +69,23 @@ query(const char *name, char *result, size_t len)
 static int
 add(const char *name, const char *value)
 {
-	Node_t *parent, *target, *newnode;
 
+	Node_t *parent, *target, *newnode;
+        pthread_rwlock_rdlock(&coarseDBLock);
 	if ((target = search(name, &head, &parent)) != NULL) {
+                pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
+        pthread_rwlock_unlock(&coarseDBLock);
 
 	newnode = Node_constructor(name, value, NULL, NULL);
-
+        
+        pthread_rwlock_wrlock(&coarseDBLock);
 	if (strcmp(name, parent->name) < 0)
 		parent->lchild = newnode;
 	else
 		parent->rchild = newnode;
+        pthread_rwlock_unlock(&coarseDBLock);
 
 	return (1);
 }
@@ -86,18 +94,21 @@ static int
 xremove(const char *name)
 {
 	Node_t *parent, *dnode, *next;
-
+        pthread_rwlock_rdlock(&coarseDBLock);
 	/* First, find the node to be removed. */
 	if ((dnode = search(name, &head, &parent)) == NULL) {
 		/* It's not there. */
+                pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
+        pthread_rwlock_unlock(&coarseDBLock);
 
 	/*
 	 * We found it. Now check out the easy cases. If the node has no right
 	 * child, then we can merely replace its parent's pointer to it with
 	 * the node's left child.
 	 */
+        pthread_rwlock_wrlock(&coarseDBLock);
 	if (dnode->rchild == NULL) {
 		if (strcmp(dnode->name, parent->name) < 0)
 			parent->lchild = dnode->lchild;
@@ -151,10 +162,12 @@ xremove(const char *name)
 			char *new_name, *new_value;
 			if ((new_name = malloc(strlen(next->name) + 1)) ==
 			    NULL) {
+                                pthread_rwlock_unlock(&coarseDBLock);
 				return (0);
 			}
 			if ((new_value = malloc(strlen(next->value) + 1)) ==
 			    NULL) {
+                                pthread_rwlock_unlock(&coarseDBLock);
 				free(new_name);
 				return (0);
 			}
@@ -168,7 +181,7 @@ xremove(const char *name)
 		*pnext = next->rchild;
 		Node_destructor(next);
 	}
-
+        pthread_rwlock_unlock(&coarseDBLock);
 	return (1);
 }
 
@@ -183,6 +196,8 @@ xremove(const char *name)
  * Assumptions:
  * parent is not NULL and it does not contain name
  */
+//search is a reader behavior function, so we should need to lock the rw lock
+//in reader mode
 static Node_t *
 search(const char *name, Node_t *parent, Node_t **parentpp)
 {

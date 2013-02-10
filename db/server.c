@@ -364,12 +364,12 @@ RunClient(void *arg)
         while(1)
 	{
 
-                ClientControl_wait();
-		char command[256];
+                char command[256];
 		/* response must be NULL for the first call to serve */
 		char response[256] = {0};
 
 		serve(client->win, response, command);
+                ClientControl_wait();
 
 		/* we've received input: reset timer */
 		Timeout_reset(timeout);
@@ -550,7 +550,8 @@ main(int argc, char *argv[])
 	}
 
 	sig_handler = SigHandler_constructor();
-        
+        pthread_rwlock_init(&coarseDBLock, NULL);
+
         char* command = (char*) malloc(MAX_LENGTH);
         
         while(1){
@@ -563,9 +564,11 @@ main(int argc, char *argv[])
                 exit(1);
             }
             else if(command[0] == 's' && command[1] == '\n'){
+                printf("stopped\n");
                 ClientControl_stop();
             }
             else if(command[0] == 'g' && command[1] == '\n'){
+                printf("released\n");
                 ClientControl_release();
             }
             else if(command[byte_read - 1 ] == 10){
@@ -580,9 +583,11 @@ main(int argc, char *argv[])
         }
 
         SigHandler_destructor(sig_handler);
+        pthread_mutex_destroy(&clientBlockLock);
+        pthread_cond_destroy(&clientBlockCond);
+	pthread_rwlock_destroy(&coarseDBLock);
 
-	DeleteAll();
-
+        DeleteAll();
 	cleanup_db();
 	return (EXIT_SUCCESS);
 }
