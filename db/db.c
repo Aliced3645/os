@@ -71,16 +71,14 @@ add(const char *name, const char *value)
 {
 
 	Node_t *parent, *target, *newnode;
-        pthread_rwlock_rdlock(&coarseDBLock);
+        pthread_rwlock_wrlock(&coarseDBLock);
 	if ((target = search(name, &head, &parent)) != NULL) {
                 pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
-        pthread_rwlock_unlock(&coarseDBLock);
 
 	newnode = Node_constructor(name, value, NULL, NULL);
         
-        pthread_rwlock_wrlock(&coarseDBLock);
 	if (strcmp(name, parent->name) < 0)
 		parent->lchild = newnode;
 	else
@@ -94,21 +92,19 @@ static int
 xremove(const char *name)
 {
 	Node_t *parent, *dnode, *next;
-        pthread_rwlock_rdlock(&coarseDBLock);
+        pthread_rwlock_wrlock(&coarseDBLock);
 	/* First, find the node to be removed. */
 	if ((dnode = search(name, &head, &parent)) == NULL) {
 		/* It's not there. */
                 pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
-        pthread_rwlock_unlock(&coarseDBLock);
 
 	/*
 	 * We found it. Now check out the easy cases. If the node has no right
 	 * child, then we can merely replace its parent's pointer to it with
 	 * the node's left child.
 	 */
-        pthread_rwlock_wrlock(&coarseDBLock);
 	if (dnode->rchild == NULL) {
 		if (strcmp(dnode->name, parent->name) < 0)
 			parent->lchild = dnode->lchild;
@@ -262,6 +258,7 @@ interpret_command(const char *command, char *response, size_t len)
 			strncpy(response, "not found", len-1);
 			return;
 		} else {
+                        strncpy(response, "found", len-1);
 			return;
 		}
 

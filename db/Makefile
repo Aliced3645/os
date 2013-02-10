@@ -4,7 +4,7 @@ CC=gcc
 CFLAGS= -D_REENTRANT -g3 -Wall -Wextra -Werror -pedantic \
 	-Wconversion -Wcast-qual -Wcast-align -Winline -Wfloat-equal \
 	-Wnested-externs -Wno-unused-function -Wno-unused-parameter \
-	-std=c99
+	-std=c99 -DAUTOMATED_TEST
 
 all: server interface
 

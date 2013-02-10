@@ -70,11 +70,12 @@ main(int argc, const char *argv[])
 	rbuf[0] = '\0';
 
 #ifdef AUTOMATED_TEST
-	infile = fopen("./tests/WindowScript", "r");
+	infile = fopen("./tests/test4", "r");
 	if (infile == NULL)
 		terminate(SIGINT);
 #endif
-
+        
+        int lineCount = 0;
 	for (;;) {
 		/* Print the previous response (if any) and the prompt. */
 		printf("%s\n >> ", rbuf);
@@ -94,13 +95,17 @@ main(int argc, const char *argv[])
 				sleep(10);
 				exit(EXIT_FAILURE);
 			}
-			printf("\nGoodbye\n");
+                        printf("readall\n");
+                        sleep(10);
+                        exit(1);
 			/*
 			 * Rather than exit(EXIT_SUCCESS), force the window to
 			 * be terminated by the control program.
 			 */
+
 			continue;
 		} else {
+                        lineCount ++;
 			struct iovec vec[2];
 
 #ifdef AUTOMATED_TEST
