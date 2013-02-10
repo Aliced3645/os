@@ -13,7 +13,7 @@
 //coarse grained lock
 pthread_rwlock_t coarseDBLock;
 
-Node_t head = {"", "", NULL, NULL};
+Node_t head = {"", "", NULL, NULL, PTHREAD_RWLOCK_INITIALIZER};
 
 static Node_t *search(const char *, Node_t *, Node_t **);
 
@@ -36,7 +36,7 @@ Node_constructor(const char *arg_name, const char *arg_value, Node_t *arg_left,
 	strcpy(new_node->value, arg_value);
 	new_node->lchild = arg_left;
 	new_node->rchild = arg_right;
-
+        pthread_rwlock_init(&new_node->lock,NULL);
 	return (new_node);
 }
 
@@ -47,6 +47,7 @@ Node_destructor(Node_t *node)
 		free(node->name);
 	if (node->value != NULL)
 		free(node->value);
+        pthread_rwlock_destroy(&node->lock);
 	free(node);
 }
 
@@ -54,9 +55,9 @@ static void
 query(const char *name, char *result, size_t len)
 {
 	Node_t *target;
-        pthread_rwlock_rdlock(&coarseDBLock);       
+ //       pthread_rwlock_rdlock(&coarseDBLock);       
 	target = search(name, &head, NULL);
-        pthread_rwlock_unlock(&coarseDBLock);
+  //      pthread_rwlock_unlock(&coarseDBLock);
 	if (target == NULL) {
 		strncpy(result, "not found", len-1);
 		return;
@@ -71,9 +72,9 @@ add(const char *name, const char *value)
 {
 
 	Node_t *parent, *target, *newnode;
-        pthread_rwlock_wrlock(&coarseDBLock);
+        //pthread_rwlock_wrlock(&coarseDBLock);
 	if ((target = search(name, &head, &parent)) != NULL) {
-                pthread_rwlock_unlock(&coarseDBLock);
+                //pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
 
@@ -83,7 +84,7 @@ add(const char *name, const char *value)
 		parent->lchild = newnode;
 	else
 		parent->rchild = newnode;
-        pthread_rwlock_unlock(&coarseDBLock);
+        //pthread_rwlock_unlock(&coarseDBLock);
 
 	return (1);
 }
@@ -92,11 +93,11 @@ static int
 xremove(const char *name)
 {
 	Node_t *parent, *dnode, *next;
-        pthread_rwlock_wrlock(&coarseDBLock);
+        //pthread_rwlock_wrlock(&coarseDBLock);
 	/* First, find the node to be removed. */
 	if ((dnode = search(name, &head, &parent)) == NULL) {
 		/* It's not there. */
-                pthread_rwlock_unlock(&coarseDBLock);
+        //       pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
 
@@ -158,12 +159,12 @@ xremove(const char *name)
 			char *new_name, *new_value;
 			if ((new_name = malloc(strlen(next->name) + 1)) ==
 			    NULL) {
-                                pthread_rwlock_unlock(&coarseDBLock);
+          //                      pthread_rwlock_unlock(&coarseDBLock);
 				return (0);
 			}
 			if ((new_value = malloc(strlen(next->value) + 1)) ==
 			    NULL) {
-                                pthread_rwlock_unlock(&coarseDBLock);
+            //                    pthread_rwlock_unlock(&coarseDBLock);
 				free(new_name);
 				return (0);
 			}
@@ -177,7 +178,7 @@ xremove(const char *name)
 		*pnext = next->rchild;
 		Node_destructor(next);
 	}
-        pthread_rwlock_unlock(&coarseDBLock);
+        //pthread_rwlock_unlock(&coarseDBLock);
 	return (1);
 }
 

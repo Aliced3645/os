@@ -554,7 +554,8 @@ main(int argc, char *argv[])
 
 	sig_handler = SigHandler_constructor();
         pthread_rwlock_init(&coarseDBLock, NULL);
-
+        //initialize the lock for head
+        pthread_rwlock_init(&head.lock, NULL);
         char* command = (char*) malloc(MAX_LENGTH);
         
         while(1){
