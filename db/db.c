@@ -11,6 +11,8 @@
 
 //mutex for the entire tree for stop and go
 //coarse grained lock
+//
+
 pthread_rwlock_t coarseDBLock;
 
 Node_t head = {"", "", NULL, NULL, PTHREAD_RWLOCK_INITIALIZER};
@@ -55,14 +57,13 @@ static void
 query(const char *name, char *result, size_t len)
 {
 	Node_t *target;
- //       pthread_rwlock_rdlock(&coarseDBLock);       
 	target = search(name, &head, NULL);
-  //      pthread_rwlock_unlock(&coarseDBLock);
 	if (target == NULL) {
 		strncpy(result, "not found", len-1);
 		return;
 	} else {
 		strncpy(result, target->value, len-1);
+                pthread_rwlock_unlock(&target->lock);
 		return;
 	}
 }
@@ -74,18 +75,21 @@ add(const char *name, const char *value)
 	Node_t *parent, *target, *newnode;
         //pthread_rwlock_wrlock(&coarseDBLock);
 	if ((target = search(name, &head, &parent)) != NULL) {
-                //pthread_rwlock_unlock(&coarseDBLock);
+                pthread_rwlock_unlock(&target->lock);
 		return (0);
 	}
-
+        //lock the parent which are to be modified
+        pthread_rwlock_wrlock(&parent->lock);
+        //check again in case modified by others
+    
 	newnode = Node_constructor(name, value, NULL, NULL);
         
-	if (strcmp(name, parent->name) < 0)
+	if (strcmp(name, parent->name) < 0 && parent->lchild == NULL)
 		parent->lchild = newnode;
-	else
+	else if(strcmp(name, parent->name) > 0 && parent->rchild == NULL)
 		parent->rchild = newnode;
         //pthread_rwlock_unlock(&coarseDBLock);
-
+        pthread_rwlock_unlock(&parent->lock);
 	return (1);
 }
 
@@ -100,6 +104,16 @@ xremove(const char *name)
         //       pthread_rwlock_unlock(&coarseDBLock);
 		return (0);
 	}
+        pthread_rwlock_unlock(&dnode->lock);
+        pthread_rwlock_wrlock(&parent->lock);
+        //check the condition again: the node still exists
+        if( (parent->lchild == NULL || strcmp(parent->lchild->name,dnode->name) != 0)
+                && (parent->rchild == NULL || strcmp(parent->lchild->name,dnode->name) != 0)){
+            pthread_rwlock_unlock(&parent->lock);    
+            return 0; 
+        }
+             
+        pthread_rwlock_wrlock(&dnode->lock);
 
 	/*
 	 * We found it. Now check out the easy cases. If the node has no right
@@ -111,7 +125,8 @@ xremove(const char *name)
 			parent->lchild = dnode->lchild;
 		else
 			parent->rchild = dnode->lchild;
-
+                pthread_rwlock_unlock(&dnode->lock);
+                pthread_rwlock_unlock(&parent->lock);
 		/* done with dnode */
 		Node_destructor(dnode);
 	} else if (dnode->lchild == NULL) {
@@ -121,11 +136,14 @@ xremove(const char *name)
 		else
 			parent->rchild = dnode->rchild;
 
+                pthread_rwlock_unlock(&dnode->lock);
+                pthread_rwlock_unlock(&parent->lock);
 		/* done with dnode */
 		Node_destructor(dnode);
+
 	} else {
 		Node_t **pnext;
-
+                Node_t * parent_to_change;
 		/*
 		 * So much for the easy cases ...
 		 * We know that all nodes in a node's right subtree have
@@ -143,31 +161,41 @@ xremove(const char *name)
 		 * pnext is the address of the field within the parent of next
 		 * that points to next.
 		 */
+                parent_to_change = dnode;
 		pnext = &dnode->rchild;
-
 		next = dnode->rchild;
+                pthread_rwlock_wrlock(&next->lock);
 		while (next->lchild != NULL) {
 			/*
 			 * Work our way down the lchild chain, finding the
 			 * smallest node in the subtree.
 			 */
+                        pthread_rwlock_unlock(&parent_to_change->lock);
+                        parent_to_change = next;
 			Node_t *nextl = next->lchild;
 			pnext = &next->lchild;
 			next = nextl;
+                        pthread_rwlock_wrlock(&next->lock);
 		}
+
 		{
 			char *new_name, *new_value;
 			if ((new_name = malloc(strlen(next->name) + 1)) ==
 			    NULL) {
-          //                      pthread_rwlock_unlock(&coarseDBLock);
+                                pthread_rwlock_unlock(&next->lock);
+                                pthread_rwlock_unlock(&parent_to_change->lock);
+          //                    pthread_rwlock_unlock(&coarseDBLock);
 				return (0);
 			}
 			if ((new_value = malloc(strlen(next->value) + 1)) ==
 			    NULL) {
             //                    pthread_rwlock_unlock(&coarseDBLock);
-				free(new_name);
+				pthread_rwlock_unlock(&next->lock);
+                                pthread_rwlock_unlock(&parent_to_change->lock);
+                                free(new_name);
 				return (0);
 			}
+
 			free(dnode->name);
 			free(dnode->value);
 			dnode->name = new_name;
@@ -175,10 +203,15 @@ xremove(const char *name)
 			strcpy(dnode->name, next->name);
 			strcpy(dnode->value, next->value);
 		}
-		*pnext = next->rchild;
-		Node_destructor(next);
+		parent_to_change->lchild = next->rchild;
+                pthread_rwlock_unlock(&next->lock);
+                pthread_rwlock_unlock(&parent_to_change->lock);
+                Node_destructor(next);
 	}
         //pthread_rwlock_unlock(&coarseDBLock);
+        pthread_rwlock_unlock(&dnode->lock);
+        pthread_rwlock_unlock(&parent->lock);
+		
 	return (1);
 }
 
@@ -195,31 +228,45 @@ xremove(const char *name)
  */
 //search is a reader behavior function, so we should need to lock the rw lock
 //in reader mode
+//
+//return status : target is in rd lock mode, parent not locked yet.
 static Node_t *
 search(const char *name, Node_t *parent, Node_t **parentpp)
 {
 	Node_t *next, *result;
-
+        //lock parent
+        pthread_rwlock_rdlock(&parent->lock);
+        //go left
 	if (strcmp(name, parent->name) < 0) {
 		if ((next = parent->lchild) == NULL) {
-			result = NULL;
+			result = NULL;//to add situation
+                        pthread_rwlock_unlock(&parent->lock);                
 		} else {
 			if (strcmp(name, next->name) == 0) {
 				result = next;
+                                pthread_rwlock_unlock(&parent->lock);
+                                pthread_rwlock_rdlock(&next->lock);
 			} else {
 				/* parent is no longer needed. */
+                                pthread_rwlock_unlock(&parent->lock);
 				result = search(name, next, parentpp);
 				return (result);
 			}
 		}
-	} else {
+	} 
+        //go right
+        else {
 		if ((next = parent->rchild) == NULL) {
+                        pthread_rwlock_unlock(&parent->lock);
 			result = NULL;
 		} else {
 			if (strcmp(name, next->name) == 0) {
 				result = next;
+                                pthread_rwlock_unlock(&parent->lock);
+                                pthread_rwlock_rdlock(&next->lock);
 			} else {
 				/* parent is no longer needed. */
+                                pthread_rwlock_unlock(&parent->lock);
 				result = search(name, next, parentpp);
 				return (result);
 			}
@@ -229,7 +276,7 @@ search(const char *name, Node_t *parent, Node_t **parentpp)
 	if (parentpp != NULL) {
 		*parentpp = parent;
 	}
-
+        
 	return (result);
 }
 

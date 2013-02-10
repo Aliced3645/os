@@ -12,6 +12,7 @@ typedef struct Node {
         pthread_rwlock_t lock;
 } Node_t;
 
+//LockNode forms a chain
 extern Node_t head;
 extern pthread_rwlock_t coarseDBLock;
 
