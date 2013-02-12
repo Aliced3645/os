@@ -375,6 +375,8 @@ RunClient(void *arg)
 
 		while (handle_command(command, response, sizeof (response))) {
 			/* we've processed a command: reset timer */
+                        ClientControl_wait();
+
                         Timeout_reset(timeout);
 
 			serve(client->win, response, command);
@@ -382,9 +384,7 @@ RunClient(void *arg)
 			/* we've received input: reset timer */
 			Timeout_reset(timeout);
 
-                        ClientControl_wait();
-
-
+                        
 		}
                 
 

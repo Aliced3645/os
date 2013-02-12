@@ -19,7 +19,7 @@
 pthread_rwlock_t coarseDBLock;
 
 Node_t head = {"", "", NULL, NULL, PTHREAD_RWLOCK_INITIALIZER};
-
+static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE);
 static Node_t *search(const char *, Node_t *, Node_t **);
 
 static Node_t *
@@ -64,14 +64,13 @@ static void
 query(const char *name, char *result, size_t len)
 {
 	Node_t *target, *parent;
-	target = search(name, &head, &parent);
+	target = search2(name, &parent, RD_LOCK);
 	if (target == NULL) {
                 result[0] = '\0';
+                pthread_rwlock_unlock(&parent->lock);
 		return;
 	} else {
-                pthread_rwlock_rdlock(&parent->lock);
-                if(target != NULL && target->value != NULL)
-		    strncpy(result, target->value, len-1);
+		strncpy(result, target->value, len-1);
                 pthread_rwlock_unlock(&parent->lock);
 		return;
 	}
@@ -82,15 +81,18 @@ add(const char *name, const char *value)
 {
 	Node_t *parent, *target, *newnode;
         //pthread_rwlock_wrlock(&coarseDBLock);
-	if ((target = search(name, &head, &parent)) != NULL) {
+	if ((target = search2(name, &parent, WR_LOCK)) != NULL) {
+                pthread_rwlock_unlock(&parent->lock);
 		return (0);
 	}
-        
+
+        /*  
         if(parent != NULL && parent->name != NULL)
             pthread_rwlock_wrlock(&parent->lock);
         else
             return 0;
-	        
+	*/
+
 	if (strcmp(name, parent->name) < 0 && parent->lchild == NULL){
                 newnode = Node_constructor(name, value, NULL, NULL);
 		parent->lchild = newnode;
@@ -112,9 +114,10 @@ xremove(const char *name)
          Node_t *parent, *dnode, *next;
         //pthread_rwlock_wrlock(&coarseDBLock);
 	/* First, find the node to be removed. */
-	if ((dnode = search(name, &head, &parent)) == NULL) {
+	if ((dnode = search2(name, &parent, WR_LOCK)) == NULL) {
 		/* It's not there. */
                 //pthread_rwlock_unlock(&coarseDBLock);
+                pthread_rwlock_unlock(&parent->lock);
 		return (0);
 	}
 
@@ -132,13 +135,15 @@ xremove(const char *name)
         */
 
         //recheck
+        /*
         pthread_rwlock_wrlock(&parent->lock);
         if( dnode == NULL || dnode->name == NULL || strcmp(dnode->name, name) != 0){
             pthread_rwlock_unlock(&parent->lock);    
             return 0; 
         }
-        
+        */
         //printf("locked parent and child\n");
+
 	/*
 	 * We found it. Now check out the easy cases. If the node has no right
 	 * child, then we can merely replace its parent's pointer to it with
@@ -332,7 +337,7 @@ search(const char *name, Node_t *parent, Node_t **parentpp)
 static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
     
     //at very fast, check
-    if( strcmp(head.name, name) < 0 && head.rchild == NULL){
+    if( strcmp(head.name, name) < 0 && (head.lchild == NULL || strcmp(head.lchild->name, name) == 0)){
         if(LOCKTYPE == WR_LOCK){
             pthread_rwlock_wrlock(&head.lock);
         }
@@ -340,9 +345,10 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
             pthread_rwlock_rdlock(&head.lock);
         }
         *parentpp = &head;
-        return NULL;
+        return head.lchild;
     }
-    else if(strcmp(head.name, name) > 0 && head.rchild == NULL){
+
+    else if(strcmp(head.name, name) > 0 && (head.rchild == NULL || strcmp(head.rchild->name, name) == 0)){
         if(LOCKTYPE == WR_LOCK){
             pthread_rwlock_wrlock(&head.lock);
         }
@@ -350,20 +356,49 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
             pthread_rwlock_rdlock(&head.lock);
         }
         *parentpp = &head;
-        return NULL;
+        return head.rchild;
     }
 
     //lock root first
-    Node_t* traverser = NULL;
+    Node_t* traverser = strcmp(head.name, name) > 0? head.rchild : head.lchild;
     Node_t* parent = &head;
     pthread_rwlock_rdlock(&parent->lock);
     while(1){
-        if(strcmp(name, parent->name) < 0){
-            traverser = parent->lchild;      
+            //check whether traverser is the parent of the target
+         if( strcmp(traverser->name, name) < 0 && (traverser->lchild == NULL || strcmp(traverser->lchild->name, name) == 0)){
+            if(LOCKTYPE == WR_LOCK){
+                pthread_rwlock_wrlock(&traverser->lock);
+            }
+            else{
+                pthread_rwlock_rdlock(&traverser->lock);
+            }
+            *parentpp = traverser;
+            pthread_rwlock_unlock(&parent->lock);
+            return traverser->lchild;
+        }
+
+        else if(strcmp(traverser->name, name) > 0 && (traverser->rchild == NULL || strcmp(traverser->rchild->name, name) == 0)){
+            if(LOCKTYPE == WR_LOCK){
+                pthread_rwlock_wrlock(&traverser->lock);
+            }
+            else{
+                pthread_rwlock_rdlock(&traverser->lock);
+            }
+            *parentpp = traverser;
+            pthread_rwlock_unlock(&parent->lock);
+            return traverser->rchild;
         }
         else{
-            traverser = parent->rchild;
-
+            //continue looping
+            pthread_rwlock_rdlock(&traverser->lock);
+            pthread_rwlock_unlock(&parent->lock);
+            parent = traverser;
+            if(strcmp(traverser->name, name) < 0){
+                traverser = traverser->lchild;
+            }
+            else{
+                traverser = traverser->rchild;
+            }
         }
     }
     //break
