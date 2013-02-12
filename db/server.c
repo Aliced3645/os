@@ -375,14 +375,16 @@ RunClient(void *arg)
 
 		while (handle_command(command, response, sizeof (response))) {
 			/* we've processed a command: reset timer */
-                        ClientControl_wait();
-
-			Timeout_reset(timeout);
+                        Timeout_reset(timeout);
 
 			serve(client->win, response, command);
 
 			/* we've received input: reset timer */
 			Timeout_reset(timeout);
+
+                        ClientControl_wait();
+
+
 		}
                 
 
@@ -555,7 +557,6 @@ main(int argc, char *argv[])
 	sig_handler = SigHandler_constructor();
         pthread_rwlock_init(&coarseDBLock, NULL);
         //initialize the lock for head
-        pthread_rwlock_init(&head.lock, NULL);
         char* command = (char*) malloc(MAX_LENGTH);
         
         while(1){

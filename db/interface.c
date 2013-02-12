@@ -70,7 +70,7 @@ main(int argc, const char *argv[])
 	rbuf[0] = '\0';
 
 #ifdef AUTOMATED_TEST
-	infile = fopen("./tests/test4", "r");
+	infile = fopen("./tests/test7", "r");
 	if (infile == NULL)
 		terminate(SIGINT);
 #endif
