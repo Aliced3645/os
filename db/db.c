@@ -85,7 +85,6 @@ add(const char *name, const char *value)
                 pthread_rwlock_unlock(&parent->lock);
 		return (0);
 	}
-
         /*  
         if(parent != NULL && parent->name != NULL)
             pthread_rwlock_wrlock(&parent->lock);
@@ -172,6 +171,7 @@ xremove(const char *name)
 	} else {
 		Node_t **pnext;
                 Node_t * parent_to_change;
+
 		/*
 		 * So much for the easy cases ...
 		 * We know that all nodes in a node's right subtree have
@@ -217,12 +217,12 @@ xremove(const char *name)
                                 if(parent_to_change != dnode)
                                     pthread_rwlock_unlock(&dnode->lock);
                                 pthread_rwlock_unlock(&parent->lock);
-        //                    pthread_rwlock_unlock(&coarseDBLock);
+        //                      pthread_rwlock_unlock(&coarseDBLock);
 				return (0);
 			}
 			if ((new_value = malloc(strlen(next->value) + 1)) ==
 			    NULL) {
-         //                    pthread_rwlock_unlock(&coarseDBLock);
+         //                     pthread_rwlock_unlock(&coarseDBLock);
 				pthread_rwlock_unlock(&next->lock);
                                 pthread_rwlock_unlock(&parent_to_change->lock);
                                 if(parent_to_change != dnode)
@@ -337,8 +337,10 @@ search(const char *name, Node_t *parent, Node_t **parentpp)
 static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
     
     //at very fast, check
-    if( strcmp(head.name, name) < 0 && (head.lchild == NULL || strcmp(head.lchild->name, name) == 0)){
+    //pthread_rwlock_rdlock(&head.lock);
+    if( strcmp(name, head.name) < 0 && (head.lchild == NULL || strcmp(head.lchild->name, name) == 0)){
         if(LOCKTYPE == WR_LOCK){
+            //pthread_rwlock_unlock(&head.lock);
             pthread_rwlock_wrlock(&head.lock);
         }
         else{
@@ -348,8 +350,9 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
         return head.lchild;
     }
 
-    else if(strcmp(head.name, name) > 0 && (head.rchild == NULL || strcmp(head.rchild->name, name) == 0)){
+    else if(strcmp(name, head.name) > 0 && (head.rchild == NULL || strcmp(head.rchild->name, name) == 0)){
         if(LOCKTYPE == WR_LOCK){
+            //pthread_rwlock_unlock(&head.lock);
             pthread_rwlock_wrlock(&head.lock);
         }
         else{
@@ -360,13 +363,16 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
     }
 
     //lock root first
-    Node_t* traverser = strcmp(head.name, name) > 0? head.rchild : head.lchild;
+    Node_t* traverser = strcmp(name, head.name) > 0? head.rchild : head.lchild;
     Node_t* parent = &head;
     pthread_rwlock_rdlock(&parent->lock);
+    //pthread_rwlock_rdlock(&traverser->lock);
     while(1){
-            //check whether traverser is the parent of the target
-         if( strcmp(traverser->name, name) < 0 && (traverser->lchild == NULL || strcmp(traverser->lchild->name, name) == 0)){
+         
+         //check whether traverser is the parent of the target
+         if( strcmp(name, traverser->name) < 0 && (traverser->lchild == NULL || strcmp(traverser->lchild->name, name) == 0)){
             if(LOCKTYPE == WR_LOCK){
+      //          pthread_rwlock_unlock(&traverser->lock);
                 pthread_rwlock_wrlock(&traverser->lock);
             }
             else{
@@ -377,8 +383,9 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
             return traverser->lchild;
         }
 
-        else if(strcmp(traverser->name, name) > 0 && (traverser->rchild == NULL || strcmp(traverser->rchild->name, name) == 0)){
+        else if(strcmp(name, traverser->name) > 0 && (traverser->rchild == NULL || strcmp(traverser->rchild->name, name) == 0)){
             if(LOCKTYPE == WR_LOCK){
+               // pthread_rwlock_unlock(&traverser->lock);
                 pthread_rwlock_wrlock(&traverser->lock);
             }
             else{
@@ -393,15 +400,16 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
             pthread_rwlock_rdlock(&traverser->lock);
             pthread_rwlock_unlock(&parent->lock);
             parent = traverser;
-            if(strcmp(traverser->name, name) < 0){
+            if(strcmp(name,traverser->name) < 0){
                 traverser = traverser->lchild;
+            //    pthread_rwlock_rdlock(&traverser->lock);
             }
             else{
                 traverser = traverser->rchild;
+            //    pthread_rwlock_rdlock(&traverser->lock);
             }
         }
     }
-    //break
     return NULL;
 }
 
@@ -431,7 +439,6 @@ interpret_command(const char *command, char *response, size_t len)
 			strncpy(response, "not found", len-1);
 			return;
 		} else {
-                        strncpy(response, "found", len-1);
 			return;
 		}
 
