@@ -70,6 +70,7 @@ ClientControl_release(void) {
  * the encapsulation of a client thread, i.e., the thread that handles commands
  * from clients
  */
+
 typedef struct Client {
 #ifdef _PTHREAD_H
 	pthread_t thread;
@@ -90,8 +91,38 @@ typedef struct Client {
         pthread_mutex_t barrierMutex;
         pthread_cond_t barrierQueue;
         int barrierGeneration;
-
+        //also record Timeout_t
+        void* timeout;
 } Client_t;
+
+/*
+ * This struct helps keep track of how long it's been since a command has been
+ * received by a client thread. The client thread is cancelled if it's been too
+ * long. For each client thread an associated "watchdog thread" is created
+ * which loops, sleeping wait_secs seconds since the last time the client
+ * thread received input. At each wakeup, it checks to see if the client thread
+ * has received input since the watchdog went to sleep. If not, the watchdog
+ * cancels the client thread, then terminates itself. Otherwise it loops again,
+ * sleeping wait_secs seconds since the last time the client thread received
+ * input ...
+ */
+typedef struct Timeout {
+	/* time when client thread "times out" */
+	struct timeval timeout;
+
+	/* set when client thread receives input */
+	/* reset each time watchdog thread wakes up */
+	int active;
+
+	Client_t *client;
+
+#ifdef _PTHREAD_H
+	pthread_mutex_t timeout_lock;
+	pthread_t WatchDogThread;
+#endif
+
+} Timeout_t;
+
 
 Client_t *ThreadListHead = NULL;
 Client_t *ThreadListTail = NULL;
@@ -133,6 +164,7 @@ void PrintAllThreads(){
         traverser = traverser -> next;
     }
 }
+
 //helper function, add to linkedlist of Client_t
 void AddThreadList(Client_t* client){
 
@@ -217,7 +249,6 @@ Client_constructor()
 	 * channel with it.
 	 */
 	new_Client->win = window_constructor(title);
-
 	//return (new_Client);
         int res = pthread_create(&new_Client->thread, NULL, RunClient, new_Client);
         if(res != 0){
@@ -236,10 +267,30 @@ Client_constructor()
         return new_Client;
 }
 
+/*
+ * TODO (Part 3): Destroy this timeout instance. Be sure to cancel the watchdog
+ * thread and join with it.
+ */
+static void
+Timeout_destructor(Timeout_t *timeout)
+{
+	/* TODO (Part 3): Not yet implemented. */
+        pthread_t tid = timeout->WatchDogThread;
+        pthread_cancel(tid);
+        pthread_join(tid, NULL);
+        free(timeout);
+        
+        return;
+}
+
+
 static void
 Client_destructor(Client_t *client)
 {
 	window_destructor(client->win);
+        //delete watchdog
+        Timeout_t* tc = (Timeout_t*)client->timeout;
+        Timeout_destructor(tc);
         client->next = NULL;
         client->prev = NULL;
 	free(client);
@@ -284,34 +335,6 @@ ThreadCleanup(void *arg)
         DeleteThreadFromList(client);
 }
 
-/*
- * This struct helps keep track of how long it's been since a command has been
- * received by a client thread. The client thread is cancelled if it's been too
- * long. For each client thread an associated "watchdog thread" is created
- * which loops, sleeping wait_secs seconds since the last time the client
- * thread received input. At each wakeup, it checks to see if the client thread
- * has received input since the watchdog went to sleep. If not, the watchdog
- * cancels the client thread, then terminates itself. Otherwise it loops again,
- * sleeping wait_secs seconds since the last time the client thread received
- * input ...
- */
-typedef struct Timeout {
-	/* time when client thread "times out" */
-	struct timeval timeout;
-
-	/* set when client thread receives input */
-	/* reset each time watchdog thread wakes up */
-	int active;
-
-	Client_t *client;
-
-#ifdef _PTHREAD_H
-	pthread_mutex_t timeout_lock;
-	pthread_t WatchDogThread;
-#endif
-
-} Timeout_t;
-
 static time_t Timeout_wait_secs = 3; /* timeout interval */
 
 static void Timeout_reset(Timeout_t *);
@@ -331,6 +354,7 @@ Timeout_constructor(Client_t *a_client)
         memset(tc, 0, sizeof (Timeout_t));
         gettimeofday(&tc->timeout, NULL);
         tc->timeout.tv_sec = tc->timeout.tv_sec + Timeout_wait_secs;
+        a_client->timeout = tc;
         tc->active = 0;
         tc->client = a_client;
         pthread_mutex_init(&tc->timeout_lock, NULL);
@@ -343,16 +367,6 @@ Timeout_constructor(Client_t *a_client)
             return NULL;
         }
 	return tc;
-}
-
-/*
- * TODO (Part 3): Destroy this timeout instance. Be sure to cancel the watchdog
- * thread and join with it.
- */
-static void
-Timeout_destructor(Timeout_t *timeout)
-{
-	/* TODO (Part 3): Not yet implemented. */
 }
 
 /*
@@ -450,7 +464,11 @@ void
 Timeout_reset(Timeout_t *timeout)
 {
 	/* TODO (Part 3): Not yet implemented. */
-
+        pthread_mutex_lock(&timeout->timeout_lock);
+        gettimeofday(&timeout->timeout, NULL);
+        timeout->timeout.tv_sec = timeout->timeout.tv_sec + Timeout_wait_secs;
+        timeout->active = 1;
+        pthread_mutex_unlock(&timeout->timeout_lock);
 }
 
 /*
@@ -465,12 +483,6 @@ Timeout_WatchDog(void *arg)
 	Timeout_t *timeout = arg;
         clientBarrier(timeout->client);
 	struct timespec to;
-
-	/*
-	 * TODO (Part 3): Make sure that the timeout clock doesn't start till
-	 * the client is fully started, and thus that the thread won't time out
-	 * until after it has fully started. A barrier may be useful here.
-	 */
 
 	to.tv_sec = Timeout_wait_secs;
 	to.tv_nsec = 0;
@@ -491,8 +503,11 @@ Timeout_WatchDog(void *arg)
 			 * TODO (Part 3): Our client thread hasn't received
 			 * input in a while, so cancel it (and self-destruct).
 			 */
-                        
-                        exit(0);
+                        pthread_t tid = timeout->client->thread;
+                        pthread_cancel(tid);        
+                        pthread_join(tid, NULL);
+                        Timeout_destructor(timeout);
+                        return 0;
 
 		} else {
 			timeout->active = 0;
