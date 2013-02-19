@@ -129,6 +129,7 @@ Client_t *ThreadListTail = NULL;
 
 
 void clientBarrier(Client_t* client){
+
     int localGeneration;
     pthread_mutex_lock(&client->barrierMutex);
     if( ++client->barrierCount < 3){
@@ -143,6 +144,7 @@ void clientBarrier(Client_t* client){
         pthread_cond_broadcast(&client->barrierQueue);
     }
     pthread_mutex_unlock(&client->barrierMutex);
+
 }
 
 #ifdef _PTHREAD_H
@@ -248,6 +250,8 @@ Client_constructor()
 	 * This constructor creates a window and sets up a communication
 	 * channel with it.
 	 */
+        //ban cancel here
+        
 	new_Client->win = window_constructor(title);
 	//return (new_Client);
         int res = pthread_create(&new_Client->thread, NULL, RunClient, new_Client);
@@ -275,6 +279,9 @@ static void
 Timeout_destructor(Timeout_t *timeout)
 {
 	/* TODO (Part 3): Not yet implemented. */
+        if(timeout == NULL)
+            return;
+
         pthread_t tid = timeout->WatchDogThread;
         pthread_cancel(tid);
         pthread_join(tid, NULL);
@@ -293,6 +300,7 @@ Client_destructor(Client_t *client)
         Timeout_destructor(tc);
         client->next = NULL;
         client->prev = NULL;
+        pthread_mutex_unlock(&clientBlockLock);
 	free(client);
 }
 
@@ -335,7 +343,7 @@ ThreadCleanup(void *arg)
         DeleteThreadFromList(client);
 }
 
-static time_t Timeout_wait_secs = 3; /* timeout interval */
+static time_t Timeout_wait_secs = 5; /* timeout interval */
 
 static void Timeout_reset(Timeout_t *);
 static void *Timeout_WatchDog(void *); /* watchdog thread */
@@ -419,24 +427,23 @@ RunClient(void *arg)
                 char command[256];
 		/* response must be NULL for the first call to serve */
 		char response[256] = {0};
-
-		serve(client->win, response, command);
-                
+                serve(client->win, response, command);
                 /* we've received input: reset timer */
 		Timeout_reset(timeout);
-
 		while (handle_command(command, response, sizeof (response))) {
 			/* we've processed a command: reset timer */
+                        ClientControl_wait();
+
                         Timeout_reset(timeout);
 			serve(client->win, response, command);
 			/* we've received input: reset timer */
-			Timeout_reset(timeout);
-                        ClientControl_wait();
-                        pthread_testcancel();
+                        Timeout_reset(timeout);
 		}
+                pthread_testcancel();
 	}
 
         pthread_cleanup_pop(0);
+
 	return (NULL);
 }
 

@@ -448,7 +448,7 @@ interpret_command(const char *command, char *response, size_t len)
 		}
 
 		break;
-
+        
 	case 'a':
 		/* add to the database */
 		sscanf(&command[1], "%255s %255s", name, value);
