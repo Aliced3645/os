@@ -26,8 +26,10 @@
 
 //a global flag indicating whether clients can handle input..
 int clientBlock = 0;//1 if block
+unsigned int clientsCount = 0;
 pthread_mutex_t clientBlockLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t clientBlockCond = PTHREAD_COND_INITIALIZER;
+pthread_barrier_t* clientsBarrier = NULL;
 
 static void
 ClientControl_wait(void) {
@@ -120,7 +122,8 @@ typedef struct Timeout {
 
 } Timeout_t;
 
-
+//create mutex to protect the linkedlist
+pthread_mutex_t listMutex;
 Client_t *ThreadListHead = NULL;
 Client_t *ThreadListTail = NULL;
 
@@ -165,8 +168,10 @@ void AddThreadList(Client_t* client){
 int DeleteThreadFromList(Client_t* client){
 
     //special case happens in the head
-    if(ThreadListHead == NULL)
+    if(ThreadListHead == NULL){
+        printf("No Client Thread now\n");
         return -1;
+    }
     else if(ThreadListHead == ThreadListTail){
         if(ThreadListTail == client){
             Client_destructor(client);
@@ -229,7 +234,6 @@ Client_constructor()
 	 * channel with it.
 	 */
         //ban cancel here
-        
 	new_Client->win = window_constructor(title);
 	//return (new_Client);
         int res = pthread_create(&new_Client->thread, NULL, RunClient, new_Client);
@@ -240,7 +244,12 @@ Client_constructor()
             return NULL;
         }
         client_counter ++;
-
+        clientsCount ++;
+        
+        res = pthread_detach(new_Client->thread);
+        if(res != 0){
+            printf("detach error\n");
+        }
         //barrier setup
         pthread_barrier_init(&new_Client->barrier, NULL, 3);
         return new_Client;
@@ -272,12 +281,17 @@ Client_destructor(Client_t *client)
 	window_destructor(client->win);
         //delete watchdog
         Timeout_t* tc = (Timeout_t*)client->timeout;
+        clientsCount --;
         Timeout_destructor(tc);
         client->next = NULL;
         client->prev = NULL;
         pthread_mutex_unlock(&clientBlockLock);
         pthread_barrier_destroy(&client->barrier);
 	free(client);
+        if(clientsBarrier != NULL){
+            pthread_barrier_wait(clientsBarrier);
+        }
+
 }
 
 /*
@@ -290,15 +304,20 @@ DeleteAll()
 	/* TODO (Part 3): Not yet implemented. */
         //traverse the list, call cancel.
         Client_t* traverser = ThreadListHead;
+        clientsBarrier = malloc(sizeof (pthread_barrier_t));
+        pthread_barrier_init(clientsBarrier, NULL, clientsCount + 1);
         while(traverser != NULL){
             Client_t* todelete = traverser;
             pthread_t tid = todelete->thread;
             traverser = traverser -> next;
             pthread_cancel(tid);
-            pthread_join(tid,  NULL);
-
+            //pthread_join(tid,  NULL);
         }
+        pthread_barrier_wait(clientsBarrier);
         ThreadListHead = ThreadListTail = NULL;
+        pthread_barrier_destroy(clientsBarrier);
+        free(clientsBarrier);
+        clientsBarrier = NULL;
         return;
 }
 
@@ -315,8 +334,14 @@ DeleteAll()
 static void
 ThreadCleanup(void *arg)
 {
+	printf("Inside Cleanup\n");
         Client_t *client = arg;
-        DeleteThreadFromList(client);
+        pthread_mutex_lock(&listMutex);
+        int res = DeleteThreadFromList(client);
+        pthread_mutex_unlock(&listMutex);
+	if(res == -1){
+            printf("Not found target client struct in ThreadCleanup()\n");
+        }
 }
 
 static time_t Timeout_wait_secs = 5; /* timeout interval */
@@ -381,8 +406,10 @@ RunClient(void *arg)
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
         pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	pthread_cleanup_push(ThreadCleanup, (void*)client);
-        
+ 
+        pthread_mutex_lock(&listMutex);
         AddThreadList(client);
+        pthread_mutex_unlock(&listMutex);
 
 	/* The client thread is now fully started. */
 	/*
@@ -602,6 +629,7 @@ main(int argc, char *argv[])
 
 	sig_handler = SigHandler_constructor();
         pthread_rwlock_init(&coarseDBLock, NULL);
+        pthread_mutex_init(&listMutex, NULL);
         //initialize the lock for head
         char* command = (char*) malloc(MAX_LENGTH);
         
@@ -632,12 +660,12 @@ main(int argc, char *argv[])
             memset(command, MAX_LENGTH, 0);
         }
 
-        SigHandler_destructor(sig_handler);
         pthread_mutex_destroy(&clientBlockLock);
         pthread_cond_destroy(&clientBlockCond);
 	pthread_rwlock_destroy(&coarseDBLock);
-
+        pthread_mutex_destroy(&listMutex);
         DeleteAll();
 	cleanup_db();
+        SigHandler_destructor(sig_handler);
 	return (EXIT_SUCCESS);
 }
