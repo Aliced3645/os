@@ -30,7 +30,7 @@ unsigned int clientsCount = 0;
 pthread_mutex_t clientBlockLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t clientBlockCond = PTHREAD_COND_INITIALIZER;
 pthread_barrier_t* clientsBarrier = NULL;
-
+pthread_mutex_t clientsCountLock = PTHREAD_MUTEX_INITIALIZER;
 static void
 ClientControl_wait(void) {
     /* TODO (Part 2): Not yet implemented. */
@@ -203,6 +203,8 @@ int DeleteThreadFromList(Client_t* client){
                 Client_destructor(client);
                 return 0;
             }
+            slow = fast;
+            fast = fast->next;
         }
     }
 
@@ -243,8 +245,10 @@ Client_constructor()
             Client_destructor(new_Client);
             return NULL;
         }
+        pthread_mutex_lock(&clientsCountLock);
         client_counter ++;
         clientsCount ++;
+        pthread_mutex_unlock(&clientsCountLock);
         
         res = pthread_detach(new_Client->thread);
         if(res != 0){
@@ -278,20 +282,25 @@ Timeout_destructor(Timeout_t *timeout)
 static void
 Client_destructor(Client_t *client)
 {
+        //printf("in destructor!\n");
 	window_destructor(client->win);
         //delete watchdog
         Timeout_t* tc = (Timeout_t*)client->timeout;
+        pthread_mutex_lock(&clientsCountLock);
         clientsCount --;
-        Timeout_destructor(tc);
-        client->next = NULL;
-        client->prev = NULL;
-        pthread_mutex_unlock(&clientBlockLock);
-        pthread_barrier_destroy(&client->barrier);
-	free(client);
+        pthread_mutex_unlock(&clientsCountLock);
+
         if(clientsBarrier != NULL){
             pthread_barrier_wait(clientsBarrier);
         }
+        //printf("client count:%d\n", clientsCount);
+        Timeout_destructor(tc);
+        client->next = NULL;
+        client->prev = NULL;
 
+        pthread_mutex_unlock(&clientBlockLock);
+        pthread_barrier_destroy(&client->barrier);
+	free(client);
 }
 
 /*
@@ -305,15 +314,18 @@ DeleteAll()
         //traverse the list, call cancel.
         Client_t* traverser = ThreadListHead;
         clientsBarrier = malloc(sizeof (pthread_barrier_t));
+        pthread_mutex_lock(&clientsCountLock);
+        //printf("Client number in delete all: %d\n", clientsCount);
         pthread_barrier_init(clientsBarrier, NULL, clientsCount + 1);
+        pthread_mutex_unlock(&clientsCountLock);
         while(traverser != NULL){
             Client_t* todelete = traverser;
             pthread_t tid = todelete->thread;
             traverser = traverser -> next;
             pthread_cancel(tid);
-            //pthread_join(tid,  NULL);
         }
         pthread_barrier_wait(clientsBarrier);
+        //printf("exit barrier");
         ThreadListHead = ThreadListTail = NULL;
         pthread_barrier_destroy(clientsBarrier);
         free(clientsBarrier);
@@ -334,11 +346,11 @@ DeleteAll()
 static void
 ThreadCleanup(void *arg)
 {
-	printf("Inside Cleanup\n");
+	//printf("Inside Cleanup\n");
         Client_t *client = arg;
-        pthread_mutex_lock(&listMutex);
+        //pthread_mutex_lock(&listMutex);
         int res = DeleteThreadFromList(client);
-        pthread_mutex_unlock(&listMutex);
+        //pthread_mutex_unlock(&listMutex);
 	if(res == -1){
             printf("Not found target client struct in ThreadCleanup()\n");
         }
@@ -659,13 +671,15 @@ main(int argc, char *argv[])
             }
             memset(command, MAX_LENGTH, 0);
         }
-
+        
         pthread_mutex_destroy(&clientBlockLock);
+        pthread_mutex_destroy(&clientsCountLock);
         pthread_cond_destroy(&clientBlockCond);
 	pthread_rwlock_destroy(&coarseDBLock);
-        pthread_mutex_destroy(&listMutex);
         DeleteAll();
 	cleanup_db();
         SigHandler_destructor(sig_handler);
+        pthread_mutex_destroy(&listMutex);
+
 	return (EXIT_SUCCESS);
 }

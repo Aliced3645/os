@@ -70,7 +70,7 @@ main(int argc, const char *argv[])
 	rbuf[0] = '\0';
 
 #ifdef AUTOMATED_TEST
-	infile = fopen("./tests/test1", "r");
+	infile = fopen("./tests/WindowScript", "r");
 	if (infile == NULL)
 		terminate(SIGINT);
 #endif
@@ -95,9 +95,9 @@ main(int argc, const char *argv[])
 				sleep(10);
 				exit(EXIT_FAILURE);
 			}
-                        printf("readall\n");
-                        sleep(10);
-                        exit(1);
+                        //printf("readall\n");
+                        //sleep(10);
+                        //exit(1);
 			/*
 			 * Rather than exit(EXIT_SUCCESS), force the window to
 			 * be terminated by the control program.
