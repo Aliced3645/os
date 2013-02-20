@@ -87,10 +87,7 @@ typedef struct Client {
 	struct Client *prev;
 	struct Client *next;
         //for barrier
-        int barrierCount;
-        pthread_mutex_t barrierMutex;
-        pthread_cond_t barrierQueue;
-        int barrierGeneration;
+        pthread_barrier_t barrier;
         //also record Timeout_t
         void* timeout;
 } Client_t;
@@ -127,25 +124,6 @@ typedef struct Timeout {
 Client_t *ThreadListHead = NULL;
 Client_t *ThreadListTail = NULL;
 
-
-void clientBarrier(Client_t* client){
-
-    int localGeneration;
-    pthread_mutex_lock(&client->barrierMutex);
-    if( ++client->barrierCount < 3){
-        localGeneration = client->barrierGeneration;
-        while(localGeneration == client->barrierGeneration){
-            pthread_cond_wait(&client->barrierQueue, &client->barrierMutex);
-        }
-    }
-    else{
-        client->barrierCount = 0;
-        client->barrierGeneration ++;
-        pthread_cond_broadcast(&client->barrierQueue);
-    }
-    pthread_mutex_unlock(&client->barrierMutex);
-
-}
 
 #ifdef _PTHREAD_H
 pthread_mutex_t ThreadListMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -264,10 +242,7 @@ Client_constructor()
         client_counter ++;
 
         //barrier setup
-        new_Client->barrierCount = 0;
-        pthread_mutex_init(&new_Client->barrierMutex, NULL);
-        pthread_cond_init(&new_Client->barrierQueue, NULL);
-        new_Client->barrierGeneration = 0;
+        pthread_barrier_init(&new_Client->barrier, NULL, 3);
         return new_Client;
 }
 
@@ -301,6 +276,7 @@ Client_destructor(Client_t *client)
         client->next = NULL;
         client->prev = NULL;
         pthread_mutex_unlock(&clientBlockLock);
+        pthread_barrier_destroy(&client->barrier);
 	free(client);
 }
 
@@ -416,7 +392,7 @@ RunClient(void *arg)
 	 * must not call DeleteAll until this thread is fully started. A
 	 * barrier might be useful.)
 	 */
-        clientBarrier(client);       
+        pthread_barrier_wait(&client->barrier);
 	/*
 	 * main loop of the client: fetch commands from window, interpret and
 	 * handle them, return results to window
@@ -488,7 +464,7 @@ Timeout_WatchDog(void *arg)
 {
 
 	Timeout_t *timeout = arg;
-        clientBarrier(timeout->client);
+        pthread_barrier_wait(&timeout->client->barrier);
 	struct timespec to;
 
 	to.tv_sec = Timeout_wait_secs;
@@ -643,9 +619,12 @@ main(int argc, char *argv[])
                 printf("released\n");
                 ClientControl_release();
             }
+            else if(command[0] == 'p' && command[1] == '\n'){
+                PrintAllThreads();
+            }
             else if(command[byte_read - 1 ] == 10){
                 Client_t* c = Client_constructor();
-                clientBarrier(c);
+                pthread_barrier_wait(&c->barrier);
             }
             else{
                 write(STDOUT_FILENO, "\n", 2);
