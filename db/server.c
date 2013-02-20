@@ -436,7 +436,6 @@ RunClient(void *arg)
 	 * main loop of the client: fetch commands from window, interpret and
 	 * handle them, return results to window
 	 */
-        while(1)
 	{
 
                 char command[256];
@@ -447,17 +446,14 @@ RunClient(void *arg)
 		Timeout_reset(timeout);
 		while (handle_command(command, response, sizeof (response))) {
 			/* we've processed a command: reset timer */
+                        pthread_testcancel();
                         ClientControl_wait();
-
-                        Timeout_reset(timeout);
 			serve(client->win, response, command);
 			/* we've received input: reset timer */
                         Timeout_reset(timeout);
-		}
-                pthread_testcancel();
-	}
-
-        pthread_cleanup_pop(0);
+                }
+        }
+        pthread_cleanup_pop(1);
 
 	return (NULL);
 }
