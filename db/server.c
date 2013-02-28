@@ -27,12 +27,17 @@
 //a global flag indicating whether clients can handle input..
 int clientBlock = 0;//1 if block
 unsigned int clientsCount = 0;
+
 pthread_mutex_t clientBlockLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t clientBlockCond = PTHREAD_COND_INITIALIZER;
 pthread_barrier_t* clientsBarrier = NULL;
 pthread_mutex_t clientsCountLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_barrier_t* releaseBarrier = NULL;
+
+//if there is a barrier pointer as a parameter, which means the signal thread
+//is waiting it to go into the barrier
 static void
-ClientControl_wait(void) {
+ClientControl_wait() {
     /* TODO (Part 2): Not yet implemented. */
     pthread_mutex_lock(&clientBlockLock);
     while(clientBlock == 1){
@@ -40,6 +45,7 @@ ClientControl_wait(void) {
         pthread_cond_wait(&clientBlockCond, &clientBlockLock);
     }
     pthread_mutex_unlock(&clientBlockLock);
+    
 }
 
 /*
@@ -58,9 +64,10 @@ ClientControl_stop(void) {
  * TODO (Part 2): This function should be implemented and called by the main
  * thread to resume client threads.
  */
+
 static void
-ClientControl_release(void) {
-	/* TODO (Part 2): Not yet implemented. */
+ClientControl_release() {
+    /* TODO (Part 2): Not yet implemented. */
     pthread_mutex_lock(&clientBlockLock);
     clientBlock = 0;
     pthread_mutex_unlock(&clientBlockLock);
@@ -229,8 +236,11 @@ Client_constructor()
 	Client_t *new_Client = malloc(sizeof (Client_t));
 	if (new_Client == NULL)
 		return (NULL);
+        memset(new_Client, 0, sizeof (Client_t));
 	sprintf(title, "Client %d", client_counter);
-                
+        //barrier setup
+        pthread_barrier_init(&new_Client->barrier, NULL, 3);
+       
 	/*
 	 * This constructor creates a window and sets up a communication
 	 * channel with it.
@@ -254,8 +264,6 @@ Client_constructor()
         if(res != 0){
             printf("detach error\n");
         }
-        //barrier setup
-        pthread_barrier_init(&new_Client->barrier, NULL, 3);
         return new_Client;
 }
 
@@ -273,7 +281,7 @@ Timeout_destructor(Timeout_t *timeout)
         pthread_t tid = timeout->WatchDogThread;
         pthread_cancel(tid);
         pthread_join(tid, NULL);
-        free(timeout);
+ //       free(timeout);
         
         return;
 }
@@ -286,6 +294,7 @@ Client_destructor(Client_t *client)
 	window_destructor(client->win);
         //delete watchdog
         Timeout_t* tc = (Timeout_t*)client->timeout;
+        
         pthread_mutex_lock(&clientsCountLock);
         clientsCount --;
         pthread_mutex_unlock(&clientsCountLock);
@@ -300,7 +309,9 @@ Client_destructor(Client_t *client)
 
         pthread_mutex_unlock(&clientBlockLock);
         pthread_barrier_destroy(&client->barrier);
-	free(client);
+	//free(client);
+
+        return;
 }
 
 /*
@@ -315,7 +326,7 @@ DeleteAll()
         Client_t* traverser = ThreadListHead;
         clientsBarrier = malloc(sizeof (pthread_barrier_t));
         pthread_mutex_lock(&clientsCountLock);
-        //printf("Client number in delete all: %d\n", clientsCount);
+        printf("Client number in delete all: %d\n", clientsCount);
         pthread_barrier_init(clientsBarrier, NULL, clientsCount + 1);
         pthread_mutex_unlock(&clientsCountLock);
         while(traverser != NULL){
@@ -323,6 +334,8 @@ DeleteAll()
             pthread_t tid = todelete->thread;
             traverser = traverser -> next;
             pthread_cancel(tid);
+            free(todelete->timeout);
+            free(todelete);
         }
         pthread_barrier_wait(clientsBarrier);
         //printf("exit barrier");
@@ -448,7 +461,8 @@ RunClient(void *arg)
 			/* we've processed a command: reset timer */
                         pthread_testcancel();
                         ClientControl_wait();
-			serve(client->win, response, command);
+                        pthread_testcancel();
+                        serve(client->win, response, command);
 			/* we've received input: reset timer */
                         Timeout_reset(timeout);
                 }
@@ -506,6 +520,7 @@ Timeout_WatchDog(void *arg)
 	to.tv_nsec = 0;
 
 	while (1) {
+                ClientControl_wait();
 		struct timeval now;
                 /*
 		 * sleep for the current timeout interval
@@ -519,7 +534,7 @@ Timeout_WatchDog(void *arg)
 		if (timeout->active == 0) {
 			/*
 			 * TODO (Part 3): Our client thread hasn't received
-			 * input in a while, so cancel it (and self-destruct).
+			 * input in a while, so cancel it (and self.
 			 */
                         pthread_t tid = timeout->client->thread;
                         pthread_cancel(tid);        
@@ -608,8 +623,16 @@ SigMon(void *arg) {
 	sigset_t *set = arg;
         int sig;
         while(1){
-          sigwait(set, &sig);
+            sigwait(set, &sig);
+            int isBlocking = 0;
+            if(clientBlock == 1){
+                isBlocking = 1;
+                ClientControl_release();
+                sleep(1);//sleep for one second to wait for all clients to start continue working
+            }
             DeleteAll();
+            if(isBlocking == 1)
+                ClientControl_stop();
         }
 	return (NULL);
 }
@@ -667,7 +690,8 @@ main(int argc, char *argv[])
             }
             memset(command, MAX_LENGTH, 0);
         }
-        
+        free(command);
+        ClientControl_release();
         pthread_mutex_destroy(&clientBlockLock);
         pthread_mutex_destroy(&clientsCountLock);
         pthread_cond_destroy(&clientBlockCond);
@@ -679,3 +703,5 @@ main(int argc, char *argv[])
 
 	return (EXIT_SUCCESS);
 }
+
+

@@ -172,8 +172,6 @@ xremove(const char *name)
                             pthread_rwlock_unlock(&parent_to_change->lock);
                         parent_to_change = next;
 		        next  = next->lchild;
-		    //	pnext = &next->lchild;
-		   //	next = nextl;
                         pthread_rwlock_wrlock(&next->lock);
 		}
 
@@ -259,13 +257,9 @@ search(const char *name, Node_t *parent, Node_t **parentpp, int LOCKTYPE)
                 next = parent->lchild;
 		if (next == NULL || next->name == NULL) {
 			result = NULL;//to add situation
-                        //pthread_rwlock_unlock(&parent->lock);    
 		} else {
 			if (strcmp(name, next->name) == 0) {
 				result = next;
-                                //pthread_rwlock_unlock(&parent->lock);
-                                //unprotected interval
-                                
 			} else {
 				/* parent is no longer needed. */
                                 result = search(name, parent->lchild, parentpp, LOCKTYPE);
@@ -278,12 +272,10 @@ search(const char *name, Node_t *parent, Node_t **parentpp, int LOCKTYPE)
         else {
                 next = parent->rchild;
 		if (next == NULL || next->name == NULL) {
-                        //pthread_rwlock_unlock(&parent->lock);
 			result = NULL;
 		} else {
 			if (strcmp(name, next->name) == 0) {
 				result = next;
-                                //pthread_rwlock_unlock(&parent->lock);
 
 			} else {
 				/* parent is no longer needed. */
@@ -302,7 +294,7 @@ search(const char *name, Node_t *parent, Node_t **parentpp, int LOCKTYPE)
 	return (result);
 }
 
-//my non-iterative version search
+//my non-iterative version search ( which is used instead of search()!!)
 //user can specify the type of lock at the last parent
 //always search from the head
 //so don't need to specify the prent in original search
@@ -390,30 +382,6 @@ static Node_t* search2(const char* name, Node_t** parentpp, int LOCKTYPE){
          }
 
 
-        /*
-        else if(strcmp(name, traverser->name) > 0 && (traverser->rchild == NULL || strcmp(traverser->rchild->name, name) == 0)){
-            *parentpp = traverser;
-            pthread_rwlock_unlock(&parent->lock);
-            return traverser->rchild;
-        }
-        else{
-            //continue looping
-            pthread_rwlock_unlock(&parent->lock);
-            parent = traverser;
-            if(strcmp(name,traverser->name) < 0){
-                traverser = traverser->lchild;
-            }
-            else{
-                traverser = traverser->rchild;
-            }
-
-            if(LOCKTYPE == WR_LOCK)
-                pthread_rwlock_wrlock(&traverser->lock);
-            else
-                pthread_rwlock_rdlock(&traverser->lock);
-
-        }
-        */
     }
     return NULL;
 }
