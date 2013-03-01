@@ -47,9 +47,11 @@ void uthread_add_to_runnable_queue(uthread_t* uthr){
 void
 uthread_yield(void)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_yield");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_yield");
+        ut_curthr-> ut_state = UT_RUNNABLE;
+        uthread_switch();
+        return;
 }
-
 
 
 /*
@@ -61,7 +63,10 @@ uthread_yield(void)
 void
 uthread_block(void) 
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_block");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_block");
+        ut_curthr -> ut_state = UT_WAIT;
+        uthread_switch();
+        return;
 }
 
 
@@ -76,7 +81,21 @@ uthread_block(void)
 void
 uthread_wake(uthread_t *uthr)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_wake");
+    int state = uthr -> ut_state;
+    
+    if( state == UT_WAIT){
+
+        uthr -> ut_state = UT_ON_CPU;   
+        uthread_t* old_thr = ut_curthr;
+        ut_curthr = uthr;
+        if(old_thr -> ut_state == UT_ON_CPU){
+            old_thr -> ut_state = UT_RUNNABLE;
+            uthread_add_to_runnable_queue(old_thr);       
+        }
+        
+        uthread_swapcontext( & old_thr -> ut_ctx, &ut_curthr -> ut_ctx);
+    }
+    
 }
 
 
@@ -91,7 +110,18 @@ uthread_wake(uthread_t *uthr)
 void
 uthread_setprio(uthread_id_t id, int prio)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_setprio");
+    uthread_t* thread_to_change = &uthreads[id];
+    if(thread_to_change->ut_state == UT_RUNNABLE){
+        int previous_prio = thread_to_change->ut_prio;
+        thread_to_change->ut_prio = prio;
+        utqueue_remove(&runq_table[previous_prio], thread_to_change);
+        utqueue_enqueue(&runq_table[prio], thread_to_change);
+    }
+    else{
+        //change directly
+        thread_to_change->ut_prio = prio;
+    }
+    return;
 }
 
 
@@ -118,7 +148,42 @@ uthread_setprio(uthread_id_t id, int prio)
 void
 uthread_switch(void)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_switch");
+
+        //we change the location of 
+        //the first thread: it might be put in runnable queue
+        //or it might be just switched
+        uthread_t * old_thr = ut_curthr;
+            //check the state
+        if( old_thr -> ut_state == UT_RUNNABLE){
+                //called by uthread_yield
+                uthread_add_to_runnable_queue(old_thr);
+        }
+        else{
+                //wont add to the runnable queue
+        }
+        while(1){
+        //get the next runnable thread.
+        //from highest priority queue to low priority queue
+        int i = UTH_MAXPRIO;
+        uthread_t* next_thread = NULL;
+        for(; i >= 0; i --){
+            if( !utqueue_empty(&runq_table[i])){
+                next_thread = utqueue_dequeue(&runq_table[i]);
+            }
+        }
+        if(next_thread != NULL){
+            //switch!
+            next_thread->ut_state = UT_ON_CPU;
+            ut_curthr = next_thread;
+            uthread_swapcontext(& old_thr -> ut_ctx, &ut_curthr -> ut_ctx);
+            return;
+        }
+        //no runnable threads
+        //TODO: Rewrtie uthread_idle
+        else{
+            uthread_idle();
+        }
+     }
 }
 
 

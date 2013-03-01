@@ -155,9 +155,12 @@ uthread_exit(int status)
             //put onto the reaper's dead thread queue
             make_reapable(ut_curthr);
         }
-        
+        //will we end up here???? 
+        //useless code??
+
 	uthread_switch();
 	PANIC("returned to a dead thread");
+
 }
 
 
@@ -186,19 +189,20 @@ int
 uthread_join(uthread_id_t uid, int *return_value)
 {
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_join");
+        assert(return_value != NULL);
         if(uthread_id_bitmap[uid] == false){
             errno = ESRCH;
             return -1;
         }
         //get the thread
-        uthread_t thread_to_join = uthreads[uid];
+        uthread_t *thread_to_join = &uthreads[uid];
         //check for other error conditions
-        if(thread_to_join.ut_detached == true){
+        if(thread_to_join->ut_detached == true){
             errno = EINVAL;
             return -1;
         }
-        if(thread_to_join.ut_waiter  != NULL){
-            if(thread_to_join.ut_waiter == ut_curthr){
+        if(thread_to_join->ut_waiter  != NULL){
+            if(thread_to_join->ut_waiter == ut_curthr){
                 errno = EDEADLK;
                 return -1;
             }
@@ -209,12 +213,15 @@ uthread_join(uthread_id_t uid, int *return_value)
         }
         
         //set the thread_to_join's watier as the caller thread
-        thread_to_join.ut_waiter = ut_curthr;
+        thread_to_join->ut_waiter = ut_curthr;
         uthread_block();
   
         //waken up 
-        thread_to_join.ut_detached = true;  
-        make_reapable(&thread_to_join);
+        //get the exit code
+        int exit_code = thread_to_join-> ut_exit;
+        thread_to_join->ut_detached = true;  
+        make_reapable(thread_to_join);
+        *return_value = exit_code;
 	return 0;
 }
 
