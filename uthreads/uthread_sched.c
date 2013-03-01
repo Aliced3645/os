@@ -21,9 +21,15 @@
 
 /* Remove __attribute__((unused)) when you use this variable. */
 
-static utqueue_t __attribute__((unused)) runq_table[UTH_MAXPRIO + 1];	/* priority runqueues */
+static utqueue_t runq_table[UTH_MAXPRIO + 1];	/* priority runqueues */
 
 /* ----------- public code -- */
+
+// add a thread to a giving queue...
+void uthread_add_to_runnable_queue(uthread_t* uthr){
+    int priorty = uthr -> ut_prio;
+    utqueue_enqueue(&runq_table[priorty],uthr);  
+}
 
 
 /*
@@ -125,5 +131,10 @@ uthread_switch(void)
 void
 uthread_sched_init(void)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_sched_init");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_sched_init");
+        int i = 0;
+        for(; i < UTH_MAXPRIO + 1; i ++){
+            utqueue_init(&runq_table[i]);
+        }
+
 }

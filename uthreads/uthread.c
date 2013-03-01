@@ -5,6 +5,7 @@
  *   DATE: Sun Sep 30 23:45:00 EDT 2001
  *
  */
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,8 @@
 #include "uthread_queue.h"
 #include "uthread_bool.h"
 
+/* ---------- created by me */
+bool uthread_id_bitmap[UTH_MAX_UTHREADS];
 
 /* ---------- globals -- */
 
@@ -57,11 +60,12 @@ static void make_reapable(uthread_t *uth);
 void
 uthread_init(void)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_init");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_init");
+        //initialize uthread_id_bitmap
+        memset(uthread_id_bitmap, 0, UTH_MAX_UTHREADS * sizeof(int));
+        memset(uthreads, 0, UTH_MAX_UTHREADS * sizeof(uthread_t));
+        /* these should go last, and in this order */
 
-	/* XXX: don't touch anything below here */
-
-	/* these should go last, and in this order */
 	uthread_sched_init();
 	reaper_init();
 	create_first_thr();
@@ -80,15 +84,37 @@ uthread_init(void)
  * and return the aforementioned thread id in <uidp>.  Return 0 on success, -1
  * on error.
  */
+//TODO: not sure how to add to runqueue.
 int
 uthread_create(uthread_id_t *uidp, uthread_func_t func,
 	       long arg1, void *arg2, int prio)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_create");
-	return 0;
+        assert(uidp != NULL);
+        
+        *uidp = uthread_alloc();                     
+        if(*uidp == -1){
+            //retirm an error
+            errno = EAGAIN;
+            return -1;
+        }
+        //create a context for the thread
+        uthread_t new_thread = uthreads[*uidp];
+        
+        new_thread.ut_id = *uidp;
+        new_thread.ut_state = UT_RUNNABLE;
+        new_thread.ut_prio = prio;
+        new_thread.ut_errno = 0;
+        new_thread.ut_has_exited = false;
+        new_thread.ut_detached = false;
+        new_thread.ut_waiter = NULL;
+        
+        char* stack = alloc_stack();
+        uthread_makecontext(&new_thread.ut_ctx, stack, UTH_STACK_SIZE, func, arg1, arg2);
+        uthread_add_to_runnable_queue(&new_thread);
+	
+        return 0;
+
 }
-
-
 
 /*
  * uthread_exit
@@ -102,15 +128,37 @@ uthread_create(uthread_id_t *uidp, uthread_func_t func,
  * If the thread is detached, it should be put onto the reaper's dead
  * thread queue and wakeup the reaper thread by calling make_reapable().
  */
+//TODO: uncertain still about uthread_exit
 void
 uthread_exit(int status)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_exit");
-	uthread_switch();
 
+        ut_curthr->ut_state = UT_ZOMBIE;
+        ut_curthr->ut_exit = status;
+        ut_curthr->ut_has_exited = true;
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_exit");
+        if(ut_curthr -> ut_detached == false){
+            //if there is a waiter?
+            if(ut_curthr-> ut_waiter == NULL){
+                //no waiter.
+                //still in the runnable queue but ignore it
+                //will be reallocated if someone calls uthread_detach()
+                return;
+            }
+            else{
+                //wake up the waiter
+                uthread_wake(ut_curthr-> ut_waiter);
+                //inside the join(), re-allocate the thread
+            }
+        }
+        else if(ut_curthr->ut_detached == true){
+            //put onto the reaper's dead thread queue
+            make_reapable(ut_curthr);
+        }
+        
+	uthread_switch();
 	PANIC("returned to a dead thread");
 }
-
 
 
 /*
@@ -137,10 +185,38 @@ uthread_exit(int status)
 int
 uthread_join(uthread_id_t uid, int *return_value)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_join");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_join");
+        if(uthread_id_bitmap[uid] == false){
+            errno = ESRCH;
+            return -1;
+        }
+        //get the thread
+        uthread_t thread_to_join = uthreads[uid];
+        //check for other error conditions
+        if(thread_to_join.ut_detached == true){
+            errno = EINVAL;
+            return -1;
+        }
+        if(thread_to_join.ut_waiter  != NULL){
+            if(thread_to_join.ut_waiter == ut_curthr){
+                errno = EDEADLK;
+                return -1;
+            }
+            else{
+                errno = EINVAL;
+                return -1;
+            }
+        }
+        
+        //set the thread_to_join's watier as the caller thread
+        thread_to_join.ut_waiter = ut_curthr;
+        uthread_block();
+  
+        //waken up 
+        thread_to_join.ut_detached = true;  
+        make_reapable(&thread_to_join);
 	return 0;
 }
-
 
 
 /*
@@ -162,10 +238,39 @@ uthread_join(uthread_id_t uid, int *return_value)
 int
 uthread_detach(uthread_id_t uid)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_detach");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_detach");
+        if(uthread_id_bitmap[uid] == false){
+            errno = ESRCH;
+            return -1;
+        }
+
+        uthread_t thread_to_detach = uthreads[uid];
+        //if the thread has already been ZOMBIE, call make_reapable
+        if(thread_to_detach.ut_state == UT_ZOMBIE){
+            make_reapable(&thread_to_detach);
+            return 0;
+        }
+
+        //if already detached, return error
+        //if someone is joining this thread, return directly with 0
+        //otherwise, detach it and set corresponding flags
+        if(thread_to_detach. ut_detached == true){
+            errno = EINVAL;
+            return -1;
+        }
+        else if(thread_to_detach.ut_detached == false){
+            if(thread_to_detach.ut_waiter != NULL){
+                return 0;
+            }
+            else{
+                thread_to_detach.ut_detached = true;
+                return 0;
+            }
+        }
+                      
+
 	return 0;
 }
-
 
 
 /*
@@ -196,7 +301,15 @@ uthread_self(void)
 static uthread_id_t
 __attribute__((unused)) uthread_alloc(void)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_alloc");
+	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_alloc");
+        //retrive the first index with 0
+        int i = 0;
+        for(; i < UTH_MAX_UTHREADS; i ++){
+            if(uthread_id_bitmap[i] == false){
+                uthread_id_bitmap[i] = true;
+                return i;
+            }
+        }
 	return -1;
 }
 
@@ -210,7 +323,13 @@ __attribute__((unused)) uthread_alloc(void)
 static void
 uthread_destroy(uthread_t *uth)
 {
-	NOT_YET_IMPLEMENTED("UTHREADS: uthread_destroy");
+    //NOT_YET_IMPLEMENTED("UTHREADS: uthread_destroy");
+    //free the thread id
+    int id = uth->ut_id;
+    uthread_id_bitmap[id] = false;
+    free_stack(uth->ut_stack);
+    memset(&uthreads[id], 0, sizeof(uthread_t));
+    return;
 }
 
 
@@ -233,7 +352,7 @@ reaper_init(void)
 {
 	list_init(&reap_queue);
 	uthread_create(&reaper_thr_id, reaper, 0, NULL, UTH_MAXPRIO);
-
+        
 	assert(reaper_thr_id != -1);
 }
 
@@ -360,7 +479,7 @@ create_first_thr(void)
  */
 
 static void
-__attribute__((unused)) make_reapable(uthread_t *uth)
+make_reapable(uthread_t *uth)
 {
 	assert(uth->ut_detached);
 	assert(uth->ut_state == UT_ZOMBIE);
