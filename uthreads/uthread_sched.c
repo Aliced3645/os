@@ -24,13 +24,10 @@
 static utqueue_t runq_table[UTH_MAXPRIO + 1];	/* priority runqueues */
 
 /* ----------- public code -- */
-
-// add a thread to a giving queue...
-void uthread_add_to_runnable_queue(uthread_t* uthr){
-    int priorty = uthr -> ut_prio;
-    utqueue_enqueue(&runq_table[priorty],uthr);  
+void uthread_add_to_runnable_queue(uthread_t* thread){
+    int prio = thread->ut_prio;
+    utqueue_enqueue(&runq_table[prio], thread);
 }
-
 
 /*
  * uthread_yield
@@ -168,9 +165,12 @@ uthread_switch(void)
         uthread_t* next_thread = NULL;
         for(; i >= 0; i --){
             if( !utqueue_empty(&runq_table[i])){
+                printf("%d:%d\n", i, runq_table[i].tq_size);
                 next_thread = utqueue_dequeue(&runq_table[i]);
+                break;
             }
         }
+
         if(next_thread != NULL){
             //switch!
             next_thread->ut_state = UT_ON_CPU;

@@ -53,7 +53,7 @@ void
 utqueue_enqueue(utqueue_t *q, uthread_t *thr)
 {
 	assert(thr->ut_link.l_next == NULL && thr->ut_link.l_prev == NULL);
-
+        
 	list_insert_head(&q->tq_waiters, &thr->ut_link);
 	q->tq_size++;
 }
@@ -76,7 +76,7 @@ utqueue_dequeue(utqueue_t *q)
 	{
 		return NULL;
 	}
-
+        
 	link = q->tq_waiters.l_prev;
 	thr = list_item(link, uthread_t, ut_link);
 	list_remove(link);

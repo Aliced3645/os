@@ -43,11 +43,12 @@ tester(long a0, void *a1)
             /* XXX: we should really cleanup here */
             exit(1);
         }
-		
+        /*  
         uthread_mtx_lock(&mtx);
         uthread_cond_signal(&cond);
         uthread_cond_wait(&cond, &mtx);
         uthread_mtx_unlock(&mtx);
+        */
     }
 
     sprintf(pbuffer, "thread %i exiting.\n", uthread_self());  
@@ -76,6 +77,7 @@ main(int ac, char **av)
     {
         uthread_create(&thr[i], tester, i, NULL, 0);
     }
+
     uthread_setprio(thr[0], 2);
 
 
@@ -93,10 +95,11 @@ main(int ac, char **av)
             perror("uthreads_test");
             return EXIT_FAILURE;
         }   
-
+        /*  
         uthread_mtx_lock(&mtx);
         uthread_cond_signal(&cond);
         uthread_mtx_unlock(&mtx);
+        */
     }
 
     uthread_exit(0);

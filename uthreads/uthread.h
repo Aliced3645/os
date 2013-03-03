@@ -82,6 +82,7 @@ typedef struct uthread {
 extern uthread_t uthreads[UTH_MAX_UTHREADS];
 extern uthread_t *ut_curthr;
 extern int uthread_id_bitmap[UTH_MAX_UTHREADS];
+void uthread_add_to_runnable_queue(uthread_t* thread);
 
 void uthread_init(void);
 
@@ -97,8 +98,5 @@ void uthread_setprio(uthread_id_t id, int prio);
 void uthread_yield(void);
 void uthread_block(void);
 void uthread_wake(uthread_t *uthr);
-
-//add by me
-void uthread_add_to_runnable_queue(uthread_t* uthr);
 
 #endif /* __uthread_h__ */

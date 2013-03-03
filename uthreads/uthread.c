@@ -97,20 +97,22 @@ uthread_create(uthread_id_t *uidp, uthread_func_t func,
             errno = EAGAIN;
             return -1;
         }
+
         //create a context for the thread
-        uthread_t new_thread = uthreads[*uidp];
+        uthread_t *new_thread = &uthreads[*uidp];
         
-        new_thread.ut_id = *uidp;
-        new_thread.ut_state = UT_RUNNABLE;
-        new_thread.ut_prio = prio;
-        new_thread.ut_errno = 0;
-        new_thread.ut_has_exited = false;
-        new_thread.ut_detached = false;
-        new_thread.ut_waiter = NULL;
+        new_thread->ut_id = *uidp;
+        new_thread->ut_state = UT_RUNNABLE;
+        new_thread->ut_prio = prio;
+        new_thread->ut_errno = 0;
+        new_thread->ut_has_exited = false;
+        new_thread->ut_detached = false;
+        new_thread->ut_waiter = NULL;
         
         char* stack = alloc_stack();
-        uthread_makecontext(&new_thread.ut_ctx, stack, UTH_STACK_SIZE, func, arg1, arg2);
-        uthread_add_to_runnable_queue(&new_thread);
+        new_thread->ut_stack = stack;
+        uthread_makecontext(&new_thread->ut_ctx, stack, UTH_STACK_SIZE, func, arg1, arg2);
+        uthread_add_to_runnable_queue(new_thread);
 	
         return 0;
 
@@ -141,9 +143,7 @@ uthread_exit(int status)
             //if there is a waiter?
             if(ut_curthr-> ut_waiter == NULL){
                 //no waiter.
-                //still in the runnable queue but ignore it
                 //will be reallocated if someone calls uthread_detach()
-                return;
             }
             else{
                 //wake up the waiter
@@ -201,11 +201,15 @@ uthread_join(uthread_id_t uid, int *return_value)
             errno = EINVAL;
             return -1;
         }
+
+        //has not detached
         if(thread_to_join->ut_waiter  != NULL){
+            //already called join() by this thread
             if(thread_to_join->ut_waiter == ut_curthr){
                 errno = EDEADLK;
                 return -1;
             }
+            //another thread has already caleld join();
             else{
                 errno = EINVAL;
                 return -1;
@@ -214,6 +218,18 @@ uthread_join(uthread_id_t uid, int *return_value)
         
         //set the thread_to_join's watier as the caller thread
         thread_to_join->ut_waiter = ut_curthr;
+        //check if the thread has already called exit() earlier
+        if(thread_to_join->ut_state == UT_ZOMBIE){
+            //reallocate it right now
+            int exit_code = thread_to_join-> ut_exit;
+            thread_to_join->ut_detached = true;  
+            make_reapable(thread_to_join);
+            *return_value = exit_code;
+	    return 0;
+        }
+
+        //else the thread is still in other states
+        //the caller of join() blocks here
         uthread_block();
   
         //waken up 
@@ -359,7 +375,7 @@ reaper_init(void)
 {
 	list_init(&reap_queue);
 	uthread_create(&reaper_thr_id, reaper, 0, NULL, UTH_MAXPRIO);
-        
+        printf("state: %d\n", uthreads[reaper_thr_id].ut_state);
 	assert(reaper_thr_id != -1);
 }
 
@@ -393,7 +409,7 @@ reaper(long a0, void *a1)
 		list_iterate_begin(&reap_queue, thread, uthread_t, ut_link)
 		{
 			assert(thread->ut_state == UT_ZOMBIE);
-
+                                            
 			list_remove(&thread->ut_link);
 			uthread_destroy(thread);
 		}
