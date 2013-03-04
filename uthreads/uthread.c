@@ -157,7 +157,7 @@ uthread_exit(int status)
         }
         //will we end up here???? 
         //useless code??
-
+        
 	uthread_switch();
 	PANIC("returned to a dead thread");
 
@@ -194,6 +194,7 @@ uthread_join(uthread_id_t uid, int *return_value)
             errno = ESRCH;
             return -1;
         }
+
         //get the thread
         uthread_t *thread_to_join = &uthreads[uid];
         //check for other error conditions
@@ -267,26 +268,26 @@ uthread_detach(uthread_id_t uid)
             return -1;
         }
 
-        uthread_t thread_to_detach = uthreads[uid];
+        uthread_t* thread_to_detach = &uthreads[uid];
         //if the thread has already been ZOMBIE, call make_reapable
-        if(thread_to_detach.ut_state == UT_ZOMBIE){
-            make_reapable(&thread_to_detach);
+        if(thread_to_detach->ut_state == UT_ZOMBIE){
+            make_reapable(thread_to_detach);
             return 0;
         }
 
         //if already detached, return error
         //if someone is joining this thread, return directly with 0
         //otherwise, detach it and set corresponding flags
-        if(thread_to_detach. ut_detached == true){
+        if(thread_to_detach->ut_detached == true){
             errno = EINVAL;
             return -1;
         }
-        else if(thread_to_detach.ut_detached == false){
-            if(thread_to_detach.ut_waiter != NULL){
+        else if(thread_to_detach->ut_detached == false){
+            if(thread_to_detach->ut_waiter != NULL){
                 return 0;
             }
             else{
-                thread_to_detach.ut_detached = true;
+                thread_to_detach->ut_detached = true;
                 return 0;
             }
         }
@@ -321,8 +322,7 @@ uthread_self(void)
  * find a free uthread_t, returns the id.
  * Remove __attribute__((unused)) when you call this function.
  */
-static uthread_id_t
-__attribute__((unused)) uthread_alloc(void)
+static uthread_id_t uthread_alloc(void)
 {
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_alloc");
         //retrive the first index with 0
@@ -348,6 +348,7 @@ uthread_destroy(uthread_t *uth)
 {
     //NOT_YET_IMPLEMENTED("UTHREADS: uthread_destroy");
     //free the thread id
+    printf("destroying thread: %d\n", uth->ut_id);
     int id = uth->ut_id;
     uthread_id_bitmap[id] = false;
     free_stack(uth->ut_stack);
@@ -375,7 +376,6 @@ reaper_init(void)
 {
 	list_init(&reap_queue);
 	uthread_create(&reaper_thr_id, reaper, 0, NULL, UTH_MAXPRIO);
-        printf("state: %d\n", uthreads[reaper_thr_id].ut_state);
 	assert(reaper_thr_id != -1);
 }
 
@@ -402,14 +402,12 @@ reaper(long a0, void *a1)
 
 		/* block.  someone will wake me up when it is time */
 		uthread_block();
-
 		/* go through dead threads, find detached and
 		 * call uthread_destroy() on them
 		 */
 		list_iterate_begin(&reap_queue, thread, uthread_t, ut_link)
 		{
 			assert(thread->ut_state == UT_ZOMBIE);
-                                            
 			list_remove(&thread->ut_link);
 			uthread_destroy(thread);
 		}
@@ -480,7 +478,8 @@ create_first_thr(void)
 	 * uthread_switch() if the current thread is the hacky temporary
 	 * thread, not a real one.
 	 */
-	uthread_getcontext(&uthreads[main_thr].ut_ctx);
+	
+        uthread_getcontext(&uthreads[main_thr].ut_ctx);
 
 	if (ut_curthr == &hack)
 	{

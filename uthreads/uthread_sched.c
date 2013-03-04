@@ -47,6 +47,7 @@ uthread_yield(void)
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_yield");
         ut_curthr-> ut_state = UT_RUNNABLE;
         uthread_switch();
+        ut_curthr->ut_state = UT_ON_CPU;
         return;
 }
 
@@ -63,6 +64,8 @@ uthread_block(void)
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_block");
         ut_curthr -> ut_state = UT_WAIT;
         uthread_switch();
+        //woken up by others
+        ut_curthr->ut_state = UT_ON_CPU;
         return;
 }
 
@@ -158,14 +161,23 @@ uthread_switch(void)
         else{
                 //wont add to the runnable queue
         }
+        
         while(1){
         //get the next runnable thread.
         //from highest priority queue to low priority queue
         int i = UTH_MAXPRIO;
+
+        /*  
+        for(; i >= 0; i --){
+            printf("%d:%d\n", i, runq_table[i].tq_size);
+        }
+        i = UTH_MAXPRIO;
+        */
+
         uthread_t* next_thread = NULL;
         for(; i >= 0; i --){
             if( !utqueue_empty(&runq_table[i])){
-                printf("%d:%d\n", i, runq_table[i].tq_size);
+                //printf("%d:%d\n", i, runq_table[i].tq_size);
                 next_thread = utqueue_dequeue(&runq_table[i]);
                 break;
             }

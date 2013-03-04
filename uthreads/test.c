@@ -16,7 +16,7 @@
 #include "uthread_mtx.h"
 #include "uthread_cond.h"
 
-#define	NUM_THREADS 3
+#define	NUM_THREADS 16
 
 #define SBUFSZ 256
 
@@ -27,12 +27,20 @@ uthread_cond_t	cond;
 /* XXX: we're using sprintf and write to emulate printf - but, we're not 
  * really being as judicious as we should be about guarding write. */
 
+void pprintf(const char* string){
+    char pbuffer[SBUFSZ];
+    sprintf(pbuffer, string);  
+    write(STDOUT_FILENO, pbuffer, strlen(pbuffer));
+}
+
+
 static void
 tester(long a0, void *a1)
 {
     int	i = 0, ret;
     char pbuffer[SBUFSZ];
     
+    //uthread_mtx_lock(&mtx);
     while (i < 10)
     {
         sprintf(pbuffer, "thread %i: hello! (%i)\n", uthread_self(), i++);  
@@ -43,12 +51,12 @@ tester(long a0, void *a1)
             /* XXX: we should really cleanup here */
             exit(1);
         }
-        /*  
+        
         uthread_mtx_lock(&mtx);
         uthread_cond_signal(&cond);
         uthread_cond_wait(&cond, &mtx);
         uthread_mtx_unlock(&mtx);
-        */
+               
     }
 
     sprintf(pbuffer, "thread %i exiting.\n", uthread_self());  
@@ -60,6 +68,7 @@ tester(long a0, void *a1)
         exit(1);
     }
 
+    uthread_cond_signal(&cond);
     uthread_exit(a0);
 }
 
@@ -75,11 +84,12 @@ main(int ac, char **av)
 
     for (i = 0; i < NUM_THREADS; i++)
     {
-        uthread_create(&thr[i], tester, i, NULL, 0);
+        uthread_create(&thr[i], tester, i, NULL,  i % UTH_MAXPRIO
+                                        //2
+                                        );
     }
 
-    uthread_setprio(thr[0], 2);
-
+    //uthread_setprio(thr[0], 6);
 
     for (i = 0; i < NUM_THREADS; i++)
     {
@@ -95,14 +105,16 @@ main(int ac, char **av)
             perror("uthreads_test");
             return EXIT_FAILURE;
         }   
-        /*  
+
+         
         uthread_mtx_lock(&mtx);
         uthread_cond_signal(&cond);
         uthread_mtx_unlock(&mtx);
-        */
+        
     }
-
+    printf("Main ends\n");
     uthread_exit(0);
 
     return 0;
+
 }
