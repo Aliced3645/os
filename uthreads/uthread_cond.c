@@ -29,7 +29,6 @@ uthread_cond_init(uthread_cond_t *cond)
         utqueue_init(&cond->uc_waiters);
 }
 
-
 /*
  * uthread_cond_wait
  *
@@ -63,6 +62,7 @@ uthread_cond_wait(uthread_cond_t *cond, uthread_mtx_t *mtx)
 void
 uthread_cond_broadcast(uthread_cond_t *cond)
 {
+
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_cond_broadcast");
         assert(cond != NULL);
         while(!utqueue_empty(&cond->uc_waiters)){
@@ -75,14 +75,13 @@ uthread_cond_broadcast(uthread_cond_t *cond)
         }
 }
 
-
-
 /*
  * uthread_cond_signal
  *
  * wakeup just one thread waiting on the condition variable.
  * Note there may be no threads waiting.
  */
+
 void
 uthread_cond_signal(uthread_cond_t *cond)
 {

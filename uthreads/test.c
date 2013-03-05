@@ -16,7 +16,7 @@
 #include "uthread_mtx.h"
 #include "uthread_cond.h"
 
-#define	NUM_THREADS 16
+#define	NUM_THREADS 6
 
 #define SBUFSZ 256
 
@@ -43,7 +43,8 @@ tester(long a0, void *a1)
     //uthread_mtx_lock(&mtx);
     while (i < 10)
     {
-        sprintf(pbuffer, "thread %i: hello! (%i)\n", uthread_self(), i++);  
+    //    uthread_setprio(uthread_self(), rand() % UTH_MAXPRIO);
+        sprintf(pbuffer, "thread %i: hello! (%i) Prio: (%d) \n", uthread_self(), i++, ut_curthr->ut_prio);  
         ret = write(STDOUT_FILENO, pbuffer, strlen(pbuffer));
         if (ret < 0) 
         {
@@ -76,7 +77,6 @@ int
 main(int ac, char **av)
 {
     int	i;
-
     uthread_init();
 
     uthread_mtx_init(&mtx);
@@ -84,12 +84,12 @@ main(int ac, char **av)
 
     for (i = 0; i < NUM_THREADS; i++)
     {
-        uthread_create(&thr[i], tester, i, NULL,  i % UTH_MAXPRIO
-                                        //2
+        uthread_create(&thr[i], tester, i, NULL, // UTH_MAXPRIO - i % UTH_MAXPRIO
+                                        2
                                         );
     }
 
-    //uthread_setprio(thr[0], 6);
+    uthread_setprio(thr[0], 6);
 
     for (i = 0; i < NUM_THREADS; i++)
     {
@@ -106,7 +106,6 @@ main(int ac, char **av)
             return EXIT_FAILURE;
         }   
 
-         
         uthread_mtx_lock(&mtx);
         uthread_cond_signal(&cond);
         uthread_mtx_unlock(&mtx);
@@ -118,3 +117,4 @@ main(int ac, char **av)
     return 0;
 
 }
+

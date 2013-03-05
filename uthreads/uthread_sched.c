@@ -148,7 +148,7 @@ uthread_setprio(uthread_id_t id, int prio)
 void
 uthread_switch(void)
 {
-
+        
         //we change the location of 
         //the first thread: it might be put in runnable queue
         //or it might be just switched
@@ -196,6 +196,7 @@ uthread_switch(void)
             uthread_idle();
         }
      }
+
 }
 
 
@@ -215,3 +216,4 @@ uthread_sched_init(void)
         }
 
 }
+
