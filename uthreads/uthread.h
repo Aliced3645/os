@@ -11,6 +11,7 @@
 
 #include <sys/types.h>
 #include "uthread_ctx.h"
+#include "uthread_mtx.h"
 #include "list.h"
 
 
@@ -82,6 +83,7 @@ typedef struct uthread {
 extern uthread_t uthreads[UTH_MAX_UTHREADS];
 extern uthread_t *ut_curthr;
 extern int uthread_id_bitmap[UTH_MAX_UTHREADS];
+extern uthread_mtx_t mtx;
 void uthread_add_to_runnable_queue(uthread_t* thread);
 
 void uthread_init(void);

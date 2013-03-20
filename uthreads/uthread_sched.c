@@ -162,6 +162,7 @@ uthread_switch(void)
                 //wont add to the runnable queue
         }
         
+        uthread_idle();
         while(1){
         //get the next runnable thread.
         //from highest priority queue to low priority queue

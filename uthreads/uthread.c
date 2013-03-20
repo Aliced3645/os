@@ -92,8 +92,10 @@ uthread_create(uthread_id_t *uidp, uthread_func_t func,
         assert(uidp != NULL);
         
         *uidp = uthread_alloc();                     
+        assert(*uidp != -1);
         if(*uidp == -1){
             //retirm an error
+            ut_curthr->ut_errno = EAGAIN;
             errno = EAGAIN;
             return -1;
         }
@@ -191,6 +193,7 @@ uthread_join(uthread_id_t uid, int *return_value)
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_join");
         assert(return_value != NULL);
         if(uthread_id_bitmap[uid] == false){
+            ut_curthr->ut_errno = ESRCH;
             errno = ESRCH;
             return -1;
         }
@@ -199,6 +202,7 @@ uthread_join(uthread_id_t uid, int *return_value)
         uthread_t *thread_to_join = &uthreads[uid];
         //check for other error conditions
         if(thread_to_join->ut_detached == true){
+            ut_curthr->ut_errno = EINVAL;
             errno = EINVAL;
             return -1;
         }
@@ -207,11 +211,13 @@ uthread_join(uthread_id_t uid, int *return_value)
         if(thread_to_join->ut_waiter  != NULL){
             //already called join() by this thread
             if(thread_to_join->ut_waiter == ut_curthr){
+                ut_curthr->ut_errno = EDEADLK;
                 errno = EDEADLK;
                 return -1;
             }
             //another thread has already caleld join();
             else{
+                ut_curthr->ut_errno = EINVAL;
                 errno = EINVAL;
                 return -1;
             }
@@ -264,6 +270,7 @@ uthread_detach(uthread_id_t uid)
 {
 	//NOT_YET_IMPLEMENTED("UTHREADS: uthread_detach");
         if(uthread_id_bitmap[uid] == false){
+            ut_curthr->ut_errno = ESRCH;
             errno = ESRCH;
             return -1;
         }
@@ -279,6 +286,7 @@ uthread_detach(uthread_id_t uid)
         //if someone is joining this thread, return directly with 0
         //otherwise, detach it and set corresponding flags
         if(thread_to_detach->ut_detached == true){
+            ut_curthr->ut_errno = EINVAL;
             errno = EINVAL;
             return -1;
         }
