@@ -183,8 +183,6 @@ vfs_shutdown()
         return ret;
 }
 
-
-
 /*
  * Given an fs_t, we search through the list of known file systems
  * and call the proper mount function.

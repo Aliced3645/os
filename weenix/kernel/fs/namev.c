@@ -25,7 +25,9 @@
 int
 lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
-        NOT_YET_IMPLEMENTED("VFS: lookup");
+        if(dir -> vn_ops -> lookup == NULL)
+            return -ENOTDIR;
+
         return 0;
 }
 
