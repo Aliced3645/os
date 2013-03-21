@@ -13,6 +13,8 @@
 #include "fs/vfs.h"
 #include "fs/vnode.h"
 
+
+
 /* This takes a base 'dir', a 'name', its 'len', and a result vnode.
  * Most of the work should be done by the vnode's implementation
  * specific lookup() function, but you may want to special case
@@ -25,9 +27,19 @@
 int
 lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
+
+        if(strcmp(name, ".") == 0)
+            result = &dir;
+        
         if(dir -> vn_ops -> lookup == NULL)
             return -ENOTDIR;
-
+        
+        /*  call the lookup function in vnode */
+        dir -> vn_ops -> lookup(dir, name, len, result);
+        if(*result != NULL){
+            vref(*result);    
+        }
+        
         return 0;
 }
 
@@ -54,7 +66,62 @@ int
 dir_namev(const char *pathname, size_t *namelen, const char **name,
           vnode_t *base, vnode_t **res_vnode)
 {
-        NOT_YET_IMPLEMENTED("VFS: dir_namev");
+        
+        /* check the base first */
+        vnode_t* prev_v_node = NULL;
+        vnode_t* next_v_node = NULL;
+
+        if(pathname[0] == '/'){
+            prev_v_node = vfs_root_vn;
+        }
+
+        if(base == NULL){
+            prev_v_node = curproc->p_cwd;
+        }
+        else{
+            prev_v_node = base;
+        }
+        vref(prev_v_node);
+
+        int start_index = (pathname[0] == '/' ? 1 : 0);
+        int end_index = 0;
+        int terminate = 0;
+        /*  do the finding */
+        while(1){
+
+            int i = start_index;
+            while(i < (int) strlen(pathname)){
+                if(pathname[i] == '/'){
+                    end_index = i - 1;
+                    break;
+                }
+            }
+            if(i == (int)strlen(pathname)){
+                /*t is the end..*/
+                end_index = (int)strlen(pathname)  - 1;
+                terminate = 1;
+                break;
+            }
+            
+            char* next_name = (char*)kmalloc(end_index - start_index + 2);
+            strncpy(next_name, pathname + start_index, end_index - start_index + 1);
+            next_name[end_index - start_index + 1] = '\0';
+            if(terminate == 1){
+                *namelen = strlen(next_name);
+                *name = next_name;
+                *res_vnode = prev_v_node;
+                break;
+            }
+
+            lookup(prev_v_node, next_name, strlen(next_name), &next_v_node);
+            
+            /* decrement the reference count */
+            vput(prev_v_node);
+            start_index = end_index + 2;
+            prev_v_node = next_v_node;
+            kfree(next_name);
+
+        }
         return 0;
 }
 
