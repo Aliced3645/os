@@ -103,17 +103,21 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
                 break;
             }
             
-            char* next_name = (char*)kmalloc(end_index - start_index + 2);
+            /*char* next_name = (char*)kmalloc(end_index - start_index + 2);*/
+            char next_name[end_index - start_index + 2];
+
             strncpy(next_name, pathname + start_index, end_index - start_index + 1);
             next_name[end_index - start_index + 1] = '\0';
             if(terminate == 1){
                 *namelen = strlen(next_name);
-                *name = next_name;
+                /**name = next_name */
+                strncpy(*name, next_name, *namelen);
                 *res_vnode = prev_v_node;
                 break;
             }
 
-            lookup(prev_v_node, next_name, strlen(next_name), &next_v_node);
+            if(lookup(prev_v_node, next_name, strlen(next_name), &next_v_node) != 0)
+                return -1;
             
             /* decrement the reference count */
             vput(prev_v_node);
@@ -136,7 +140,17 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
 int
 open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 {
-        NOT_YET_IMPLEMENTED("VFS: open_namev");
+        size_t namelen;
+        char name[256];
+        vnode_t* dir_vnode = NULL;
+        if(dir_namev(pathname, &namelen, &name, base, dir_vnode)  != 0)
+            return -1;
+        /* Now we get the vnode of parent directory and the name of the target
+         * file*/
+        vnode_t* result;
+        if(lookup(dir_vnode, name, namelen, result) != 0)
+            return -1;
+
         return 0;
 }
 
