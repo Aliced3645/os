@@ -13,6 +13,7 @@
 #include "fs/vfs.h"
 #include "fs/vnode.h"
 
+#include "mm/kmalloc.h"
 
 
 /* This takes a base 'dir', a 'name', its 'len', and a result vnode.
@@ -103,15 +104,15 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
                 break;
             }
             
-            /*char* next_name = (char*)kmalloc(end_index - start_index + 2);*/
-            char next_name[end_index - start_index + 2];
-
+            char* next_name = (char*)kmalloc(end_index - start_index + 2);
+            /*  char next_name[end_index - start_index + 2]; */
+            
             strncpy(next_name, pathname + start_index, end_index - start_index + 1);
             next_name[end_index - start_index + 1] = '\0';
             if(terminate == 1){
                 *namelen = strlen(next_name);
-                /**name = next_name */
-                strncpy(*name, next_name, *namelen);
+                *name = next_name;
+                /*strncpy(*name, *next_name, *namelen);*/
                 *res_vnode = prev_v_node;
                 break;
             }
@@ -148,17 +149,17 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
          */
         
         size_t namelen;
-        char name[256];
+        const char* name;
         vnode_t* dir_vnode = NULL;
-        if(dir_namev(pathname, &namelen, &name, base, dir_vnode)  != 0)
+        if(dir_namev(pathname, &namelen, &name, base, &dir_vnode)  != 0)
             return -1;
         /* Now we get the vnode of parent directory and the name of the target
          * file*/
         vnode_t* result = NULL;
-        if(lookup(dir_vnode, name, namelen, result) != 0)
+        if(lookup(dir_vnode, name, namelen, &result) != 0)
             return -1;
-        if(flag == O_CREAT && vnode_result == NULL){
-            if(dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, *result) == -1) 
+        if(flag == O_CREAT && (result == NULL)){
+            if(dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result) == -1) 
                 return -1;
         }
         
