@@ -177,7 +177,7 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 int
 lookup_name(vnode_t *dir, vnode_t *entry, char *buf, size_t size)
 {
-        NOT_YET_IMPLEMENTED("GETCWD: lookup_name");
+        
         return -ENOENT;
 }
 
