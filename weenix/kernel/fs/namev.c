@@ -140,6 +140,13 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
 int
 open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 {
+
+        /*  flag:
+         *  O_CREAT
+         *  O_TRUNC
+         *  O_APPEND
+         */
+        
         size_t namelen;
         char name[256];
         vnode_t* dir_vnode = NULL;
@@ -147,10 +154,14 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
             return -1;
         /* Now we get the vnode of parent directory and the name of the target
          * file*/
-        vnode_t* result;
+        vnode_t* result = NULL;
         if(lookup(dir_vnode, name, namelen, result) != 0)
             return -1;
-
+        if(flag == O_CREAT && vnode_result == NULL){
+            if(dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, *result) == -1) 
+                return -1;
+        }
+        
         return 0;
 }
 
