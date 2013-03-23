@@ -77,7 +77,6 @@ typedef struct uthread {
 
 
 
-
 /* --------------- prototypes -- */
 
 extern uthread_t uthreads[UTH_MAX_UTHREADS];

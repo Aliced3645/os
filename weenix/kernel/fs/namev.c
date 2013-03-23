@@ -28,6 +28,8 @@
 int
 lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
+        if(dir == NULL || *result == NULL || name == NULL)
+            return -1;
 
         if(strcmp(name, ".") == 0)
             result = &dir;
@@ -68,6 +70,9 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
           vnode_t *base, vnode_t **res_vnode)
 {
         
+        if(pathname == NULL)
+            return -1;
+
         /* check the base first */
         vnode_t* prev_v_node = NULL;
         vnode_t* next_v_node = NULL;
@@ -147,7 +152,9 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
          *  O_TRUNC
          *  O_APPEND
          */
-        
+
+        if(pathname == NULL)
+            return -1;
         size_t namelen;
         const char* name;
         vnode_t* dir_vnode = NULL;
@@ -166,7 +173,8 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         return 0;
 }
 
-#ifdef __GETCWD__
+/* #ifdef __GETCWD__*/
+
 /* Finds the name of 'entry' in the directory 'dir'. The name is writen
  * to the given buffer. On success 0 is returned. If 'dir' does not
  * contain 'entry' then -ENOENT is returned. If the given buffer cannot
@@ -178,7 +186,31 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 int
 lookup_name(vnode_t *dir, vnode_t *entry, char *buf, size_t size)
 {
-        
+        if(dir == NULL || entry == NULL)
+            return -1;
+
+        int offset = 0;
+        struct dirent* dent = NULL;
+        while(offset != dir -> vn_len){
+            offset = dir -> vn_ops -> readdir(dir, offset, dent);
+            /*check whether the ent is the target*/
+            ino_t inode_number = dent -> d_ino;
+            if(inode_number == entry -> vn_vno){
+                /* found the target */
+                size_t name_length = strlen(dent -> d_name);
+                if(size < name_length + 1){
+                    strncpy(buf, dent->d_name, size - 1);
+                    buf[size] = '\0';
+                    return -ERANGE;
+                }
+                else{
+                    strncpy( buf, dent->d_name, name_length);
+                    return 0;
+                }
+
+            }
+        }
+        /* at the end, not found.. */
         return -ENOENT;
 }
 
@@ -191,11 +223,85 @@ lookup_name(vnode_t *dir, vnode_t *entry, char *buf, size_t size)
  * possible errors. Even if an error code is returned the buffer
  * will be filled with a valid string which has some partial
  * information about the wanted path. */
+
+/*  helper struct  */
+typedef struct name_list{
+    list_link_t name_link;
+    char* name;
+}name_list_t;
+
 ssize_t
 lookup_dirpath(vnode_t *dir, char *buf, size_t osize)
 {
-        NOT_YET_IMPLEMENTED("GETCWD: lookup_dirpath");
+        if(dir == NULL)
+            return -ENOENT;
+        if((osize == 0 && buf != NULL) || (buf == NULL))
+            return -EINVAL;
+        
+        /* always getting the previous */
 
-        return -ENOENT;
+        vnode_t* up_vnode = NULL;
+        vnode_t* low_vnode = dir;
+        lookup(dir, "..", 3, &up_vnode);
+        list_t names_list;
+        list_init(&names_list);
+        size_t total_length = 0;
+
+        while(up_vnode != low_vnode){
+            char* namebuf = kmalloc(STR_MAX);
+            memset(namebuf, 0, STR_MAX);
+            if( ( lookup_name(up_vnode, low_vnode, namebuf + 1, STR_MAX - 1)) != 0){
+                return -1;
+            }
+            namebuf[0] = '/';
+            total_length += strlen(namebuf);
+            /* add this portion to list */
+            name_list_t* name_node = kmalloc(sizeof(name_list_t));
+            memset(name_node, 0, sizeof(name_list_t));
+            name_node -> name = namebuf;
+            list_insert_head(&names_list, &name_node->name_link);
+            low_vnode = up_vnode;
+            lookup(low_vnode, "..", 3, &up_vnode);
+        }
+        total_length += 1; /* for null terminator */
+        if(total_length > osize)
+            return -ERANGE;
+
+        /* recover the full */
+        size_t offset = 0;
+        size_t exceed_size = 0;
+        name_list_t* traverser;
+        list_iterate_begin(&names_list, traverser, name_list_t, name_link)
+        {
+            if(offset < osize - 1){
+                size_t required_length = strlen(traverser -> name);
+                size_t remaining_length = osize - offset;
+                if(remaining_length - 1 >= required_length){
+                    memcpy(buf + offset, traverser -> name, required_length);
+                    offset += required_length;
+                }
+                else{
+                    memcpy(buf + offset, traverser -> name, remaining_length - 1);
+                    buf[osize - 1] = '\0';
+                    offset = osize - 1;
+                }
+            }
+            list_remove(&traverser->name_link);
+            kfree(traverser->name);
+            traverser -> name = NULL;
+            kfree(traverser);
+        }
+        list_iterate_end();
+        
+        if(offset < osize - 1)
+            buf[offset + 1] = '\0';
+        
+        return 0;
 }
-#endif /* __GETCWD__ */
+ /* #endif  __GETCWD__ */
+
+
+
+
+
+
