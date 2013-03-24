@@ -130,5 +130,4 @@ do_open(const char *filename, int oflags)
         /* 7. return new fd */
         return fd;
         
-        return fd;
 }
