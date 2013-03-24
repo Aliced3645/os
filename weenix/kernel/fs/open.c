@@ -73,6 +73,62 @@ get_empty_fd(proc_t *p)
 int
 do_open(const char *filename, int oflags)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_open");
-        return -1;
+        /* 1.  Get the next empty file descriptor */
+        int fd = get_empty_fd(curproc);
+        if(fd == -EMFILE){
+            return -EMFILE;
+        }
+
+        /* 2. Call fget to get a fresh file_t */
+        file_t* file = fget(fd);
+        if(file == NULL){
+            /* not sure for this error */
+            return -ENOMEM;
+        }
+        /* 3. Save the file_t in curproc's file descriptor table */
+        curproc -> p_files[fd] = file;
+
+        /* 4. Set file_t->f_mode to OR of FMODE_(READ|WRITE|APPEND) based on
+         *    oflags, which can be O_RDONLY, O_WRONLY or O_RDWR, possibly OR'd with
+         *    O_APPEND.
+         */
+        int mode = -1;
+        if(oflags == O_RDONLY)
+            mode = FMODE_READ;
+
+        else if(  ((oflags & O_WRONLY) != 0) || ((oflags & O_RDWR) != 0)){
+            if( (oflags & O_APPEND) != 0){
+                mode = FMODE_APPEND;
+            }
+            else{
+                mode = FMODE_WRITE;
+            }
+        }
+        if(mode == -1){
+            /*  invalid combination */
+            return -EINVAL;
+        }
+
+        file -> f_mode = mode;
+
+        /* 5. Use open_namev() to get the vnode for the file_t. */
+        vnode_t* res_vnode = NULL;
+        vnode_t* base = curproc -> p_cwd;
+        int res = open_namev(filename, oflags, &res_vnode, base);
+        if(res < 0){
+            return res;/* including errors: ENAMETOOLONG, ENOTDIR, ENOENT */
+        }
+        if( ((res_vnode -> vn_mode & S_IFDIR) != 0) && (mode != FMODE_READ)){
+            return -EISDIR;
+        }
+        
+        /* 6. Fill in the fields of the file_t */
+        file->f_vnode = res_vnode;
+        file->f_refcount = res_vnode -> vn_refcount;
+        file->f_pos = 0;
+
+        /* 7. return new fd */
+        return fd;
+        
+        return fd;
 }

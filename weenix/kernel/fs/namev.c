@@ -38,7 +38,10 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
             return -ENOTDIR;
         
         /*  call the lookup function in vnode */
-        dir -> vn_ops -> lookup(dir, name, len, result);
+        if(dir -> vn_ops -> lookup(dir, name, len, result) == -ENOENT){
+            return -ENOENT;
+        }
+        
         if(*result != NULL){
             vref(*result);    
         }
@@ -101,15 +104,21 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
                     end_index = i - 1;
                     break;
                 }
+                i ++;
             }
+
             if(i == (int)strlen(pathname)){
                 /*t is the end..*/
                 end_index = (int)strlen(pathname)  - 1;
                 terminate = 1;
-                break;
             }
             
-            char* next_name = (char*)kmalloc(end_index - start_index + 2);
+            int component_length = end_index - start_index + 2;
+            if(component_length > STR_MAX){
+                return -ENAMETOOLONG;
+            }
+
+            char* next_name = (char*)kmalloc(component_length);
             /*  char next_name[end_index - start_index + 2]; */
             
             strncpy(next_name, pathname + start_index, end_index - start_index + 1);
@@ -121,9 +130,13 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
                 *res_vnode = prev_v_node;
                 break;
             }
-
-            if(lookup(prev_v_node, next_name, strlen(next_name), &next_v_node) != 0)
-                return -1;
+            int res;
+            if( (res = lookup(prev_v_node, next_name, strlen(next_name), &next_v_node)) != 0){
+                /* no entry or not dir */
+                vput(prev_v_node);
+                kfree(next_name);
+                return res;
+            }
             
             /* decrement the reference count */
             vput(prev_v_node);
@@ -158,16 +171,24 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         size_t namelen;
         const char* name;
         vnode_t* dir_vnode = NULL;
-        if(dir_namev(pathname, &namelen, &name, base, &dir_vnode)  != 0)
-            return -1;
+        int res;
+        if( (res = dir_namev(pathname, &namelen, &name, base, &dir_vnode))  != 0){
+            return res;
+        }
+
         /* Now we get the vnode of parent directory and the name of the target
          * file*/
         vnode_t* result = NULL;
-        if(lookup(dir_vnode, name, namelen, &result) != 0)
-            return -1;
-        if(flag == O_CREAT && (result == NULL)){
-            if(dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result) == -1) 
-                return -1;
+        if(lookup(dir_vnode, name, namelen, &result) == -ENOENT){
+            if((flag & O_CREAT) != 0){
+                if( (res = dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result)) < 0) 
+                    return res;
+                vref(result);
+                
+            }
+            else{
+                return -ENOENT;
+            }
         }
         
         return 0;

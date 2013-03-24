@@ -150,3 +150,6 @@ extern int _libc_errno;
 /* added by dap from Linux */
 #define ENOTSUP EOPNOTSUPP
 
+
+/*  added for VFS */
+#define ECREAT          132
