@@ -209,8 +209,25 @@ do_dup2(int ofd, int nfd)
 int
 do_mknod(const char *path, int mode, unsigned devid)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_mknod");
-        return -1;
+        if( (mode != S_IFCHR) && (mode != S_IFBLK) )
+            return -EINVAL;
+        const char* name = NULL;
+        size_t namelen;
+        vnode_t* dir_vnode = NULL, *res_vnode = NULL;
+        int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
+        if(res < 0)
+            return res;
+        
+        /*  check if already exists */
+        res = lookup(dir_vnode, name, namelen, &res_vnode);
+        if(res == 0){
+            return -EEXIST;
+        }
+
+        /*  make the node */
+        res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
+        vput(dir_vnode);
+        return res;
 }
 
 /* Use dir_namev() to find the vnode of the dir we want to make the new
@@ -230,8 +247,25 @@ do_mknod(const char *path, int mode, unsigned devid)
 int
 do_mkdir(const char *path)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_mkdir");
-        return -1;
+        const char* name = NULL;
+        size_t namelen;
+        vnode_t* dir_vnode = NULL, *res_vnode = NULL;
+        int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
+        if(res < 0)
+            return res;
+
+        res = lookup(dir_vnode, name, namelen, &res_vnode);
+        if(res == 0 || res != -ENOENT){
+            if(res == 0) return -EEXIST;
+            else return res;
+        }
+
+        if(res == -ENOENT)
+            res = dir_vnode -> vn_ops -> mkdir(dir_vnode, name, namelen);
+        
+        vput(dir_vnode);
+
+        return res;
 }
 
 /* Use dir_namev() to find the vnode of the directory containing the dir to be
