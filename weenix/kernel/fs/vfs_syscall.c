@@ -41,8 +41,20 @@
 int
 do_read(int fd, void *buf, size_t nbytes)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_read");
-        return -1;
+        file_t* file = fget(fd);
+        if(file == NULL)
+            return -EBADF;
+        if((file->f_vnode->vn_mode & S_IFDIR) != 0){
+            fput(file);
+            return -EISDIR;
+        }
+
+        vnode_t* file_vnode = file->f_vnode;
+        int res = file_vnode->vn_ops->read(file_vnode, file->f_pos, buf, nbytes);
+        file->f_pos += res;
+        fput(file);
+
+        return res;
 }
 
 /* Very similar to do_read.  Check f_mode to be sure the file is writable.  If
