@@ -68,7 +68,25 @@ do_read(int fd, void *buf, size_t nbytes)
 int
 do_write(int fd, const void *buf, size_t nbytes)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_write");
+
+        file_t* file = fget(fd);
+        if(file->f_mode == FMODE_READ){
+            fput(file);
+            return -EBADF;
+        }
+
+        int res;
+        if( (file->f_mode & FMODE_APPEND) != 0){
+            res = do_lseek( fd, 0, SEEK_END);
+            if(res < 0) 
+                return res;
+        }
+        
+        vnode_t* file_vnode = file->f_vnode;
+        res = file_vnode->vn_ops->write(file_vnode, file->f_pos, buf, nbytes);
+        file->f_pos += res;
+        fput(file);
+        
         return -1;
 }
 
@@ -82,8 +100,14 @@ do_write(int fd, const void *buf, size_t nbytes)
 int
 do_close(int fd)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_close");
-        return -1;
+        if(curproc->p_files[fd] == NULL)
+            return -EBADF;
+        
+        file_t* file = curproc->p_files[fd];
+        curproc->p_files[fd] = NULL;
+        fput(file);
+
+        return 0;
 }
 
 /* To dup a file:
@@ -105,8 +129,20 @@ do_close(int fd)
 int
 do_dup(int fd)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_dup");
-        return -1;
+        file_t* file = fget(fd);
+        if(file == NULL){
+            return -EBADF;
+        }
+
+        int new_fd = get_empty_fd( curproc );
+        if(new_fd < 0){
+            fput(file);
+            return -EMFILE;
+        }
+
+        curproc->p_files[new_fd] = file;
+
+        return new_fd;
 }
 
 /* Same as do_dup, but insted of using get_empty_fd() to get the new fd,
@@ -121,8 +157,28 @@ do_dup(int fd)
 int
 do_dup2(int ofd, int nfd)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_dup2");
-        return -1;
+        file_t* file = fget(ofd);
+        if(file == NULL){
+            return -EBADF;
+        }
+
+        if(nfd >= NFILES){
+            fput(file);
+            return -EBADF;
+        }
+        
+        if(curproc -> p_files[nfd] != NULL){
+            if(nfd != ofd){
+                do_close(nfd);
+                curproc -> p_files[nfd] = file;
+            }
+        }
+
+        else{
+            curproc -> p_files[nfd] = file;
+        }
+
+        return nfd;
 }
 
 /*
