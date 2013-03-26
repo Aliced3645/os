@@ -181,17 +181,20 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         vnode_t* result = NULL;
         if(lookup(dir_vnode, name, namelen, &result) == -ENOENT){
             if((flag & O_CREAT) != 0){
-                if( (res = dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result)) < 0) 
+                if( (res = dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result)) < 0){ 
+                    vput(dir_vnode);
                     return res;
+                }
                 vref(result);
-                
             }
             else{
+                vput(dir_vnode);
                 return -ENOENT;
             }
         }
-        
+        vput(dir_vnode);
         return 0;
+
 }
 
 /* #ifdef __GETCWD__*/

@@ -289,8 +289,17 @@ do_mkdir(const char *path)
 int
 do_rmdir(const char *path)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_rmdir");
-        return -1;
+        
+        const char* name = NULL;
+        size_t namelen;
+        vnode_t* dir_vnode = NULL, *res_vnode = NULL;
+        int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
+        if(res < 0)
+            return res;
+        
+        res = dir_vnode->vn_ops->rmdir(dir_vnode, name, namelen);
+        vput(dir_vnode);
+        return res;
 }
 
 /*
@@ -309,8 +318,16 @@ do_rmdir(const char *path)
 int
 do_unlink(const char *path)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_unlink");
-        return -1;
+        const char* name = NULL;
+        size_t namelen;
+        vnode_t* dir_vnode = NULL, *res_vnode = NULL;
+        int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
+        if(res < 0)
+            return res;
+        
+        res = dir_vnode->vn_ops->unlink(dir_vnode, name, namelen);
+        vput(dir_vnode);
+        return res;
 }
 
 /* To link:
@@ -335,8 +352,39 @@ do_unlink(const char *path)
 int
 do_link(const char *from, const char *to)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_link");
-        return -1;
+    vnode_t* from_vnode;
+    int res = open_namev(from, O_RDONLY, &from_vnode, curproc -> p_cwd);
+    if(res < 0){
+        vput(from_vnode);
+        return res;
+    }
+
+    vnode_t* dir_vnode;
+    const char* name = NULL;
+    size_t namelen;
+
+    res = dir_namev(to, &namelen, &name, curproc->p_cwd, &dir_vnode);
+    if(res < 0){
+        vput(dir_vnode);
+        return res;
+    }
+    
+    vnode_t* to_vnode;
+    /*  test whether exists */
+    res = lookup(dir_vnode, name, namelen, &to_vnode);
+    if(res != -ENOENT){
+        if(res == 0){
+            vput(to_vnode);
+            vput(from_vnode);
+            return -EEXIST;
+        }
+
+        vput(from_vnode);
+        return res;
+    }
+    
+    res = dir_vnode->vn_ops->link(from_vnode, dir_vnode, name, namelen);
+    return res;
 }
 
 /*      o link newname to oldname
@@ -350,8 +398,12 @@ do_link(const char *from, const char *to)
 int
 do_rename(const char *oldname, const char *newname)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_rename");
-        return -1;
+        int res = do_link(oldname, newname);
+        if(res < 0)
+            return res;
+
+        res = do_unlink(oldname);
+        return res;
 }
 
 /* Make the named directory the current process's cwd (current working
