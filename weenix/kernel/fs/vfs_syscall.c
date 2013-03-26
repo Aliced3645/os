@@ -384,6 +384,8 @@ do_link(const char *from, const char *to)
     }
     
     res = dir_vnode->vn_ops->link(from_vnode, dir_vnode, name, namelen);
+    vput(from_vnode);
+
     return res;
 }
 
