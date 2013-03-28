@@ -424,8 +424,23 @@ do_rename(const char *oldname, const char *newname)
 int
 do_chdir(const char *path)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_chdir");
-        return -1;
+        /* try to get the path first*/
+        vnode_t* new_dir = NULL;
+        vnode_t* old_dir = curproc -> p_cwd;
+        int res = open_namev(path, O_RDONLY, &new_dir, old_dir);
+        if(res < 0){
+            return res;
+        }
+        if(new_dir->vn_ops->lookup == NULL){
+            vput(new_dir);
+            return ENOTDIR;
+        }
+
+        curproc -> p_cwd = new_dir;
+
+        /*  down the refcount */
+        vput(old_dir);
+        return 0;
 }
 
 /* Call the readdir f_op on the given fd, filling in the given dirent_t*.
@@ -446,8 +461,22 @@ do_chdir(const char *path)
 int
 do_getdent(int fd, struct dirent *dirp)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_getdent");
-        return -1;
+        file_t* dir = fget(fd);
+        if(dir == NULL){
+            return -EBADF;
+        }
+        vnode_t* dir_vnode = dir->f_vnode;
+        if(dir_vnode -> vn_mode != S_IFDIR){
+            fput(dir);
+            return -ENOTDIR;
+        }
+
+        /*  do the work */
+        int offset = dir_vnode -> vn_ops -> readdir(dir->f_vnode, dir->f_pos, dirp);
+        dir->f_pos += offset;
+        /*  not sure whether to put */
+        fput(dir);
+        return offset;
 }
 
 /*
@@ -463,8 +492,44 @@ do_getdent(int fd, struct dirent *dirp)
 int
 do_lseek(int fd, int offset, int whence)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_lseek");
-        return -1;
+        if( (whence != SEEK_END) && (whence != SEEK_CUR) && (whence != SEEK_SET) ){
+            return -EINVAL;
+        }
+        
+        file_t* file = fget(fd);
+        if(file == NULL){
+            return -EBADF;
+        }
+        int length = file -> f_vnode -> vn_len;
+        int res = 0;
+        if(whence == SEEK_SET){
+            if(offset >= 0){
+                file -> f_pos = offset;
+                res = offset;
+            }
+            else{
+                res = -EINVAL;
+            }
+        }
+        else if(whence == SEEK_END){
+            if(offset >= 0){
+                file -> f_pos = length + offset;
+                res = file->f_pos;
+            }
+            else
+                res = -EINVAL;
+        }
+        else if(whence == SEEK_CUR){
+            if(offset >= 0){
+                file -> f_pos += offset;
+                res = file -> f_pos;
+            }
+            else
+                res = -EINVAL;
+        }
+
+        fput(file);
+        return res;
 }
 
 /*
@@ -481,8 +546,19 @@ do_lseek(int fd, int offset, int whence)
 int
 do_stat(const char *path, struct stat *buf)
 {
-        NOT_YET_IMPLEMENTED("VFS: do_stat");
-        return -1;
+
+        vnode_t* res_vnode = NULL;
+        int res = open_namev(path, O_RDWR, &res_vnode, curproc -> p_cwd);
+        if(res < 0){
+            if(res_vnode != NULL)
+                vput(res_vnode);
+            return res;
+        }
+
+        /*  do the work */
+        res = res_vnode -> vn_ops -> stat(res_vnode, buf);
+        vput(res_vnode);
+        return res;
 }
 
 #ifdef __MOUNTING__
