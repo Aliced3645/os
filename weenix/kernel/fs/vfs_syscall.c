@@ -429,9 +429,11 @@ do_chdir(const char *path)
         vnode_t* old_dir = curproc -> p_cwd;
         int res = open_namev(path, O_RDONLY, &new_dir, old_dir);
         if(res < 0){
+            if(new_dir != NULL)
+                vput(new_dir);
             return res;
         }
-        if(new_dir->vn_ops->lookup == NULL){
+        if(new_dir->vn_mode != S_IFDIR){
             vput(new_dir);
             return ENOTDIR;
         }

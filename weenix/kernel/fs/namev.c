@@ -28,7 +28,7 @@
 int
 lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
-        if(dir == NULL || *result == NULL || name == NULL)
+        if(dir == NULL || name == NULL)
             return -1;
 
         if(strcmp(name, ".") == 0)
@@ -83,13 +83,15 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
         if(pathname[0] == '/'){
             prev_v_node = vfs_root_vn;
         }
-
-        if(base == NULL){
-            prev_v_node = curproc->p_cwd;
-        }
         else{
-            prev_v_node = base;
+            if(base == NULL){
+                prev_v_node = curproc->p_cwd;
+            }
+            else{
+                prev_v_node = base;
+            }
         }
+            
         vref(prev_v_node);
 
         int start_index = (pathname[0] == '/' ? 1 : 0);
@@ -193,6 +195,7 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
             }
         }
         vput(dir_vnode);
+        *res_vnode = result;
         return 0;
 
 }

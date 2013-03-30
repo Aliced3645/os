@@ -24,6 +24,10 @@
                 return ret;                     \
         }
 
+ 
+int vfstest_main(int argc, char** argv);
+
+
 ksyscall(close, (int fd), (fd))
 ksyscall(read, (int fd, void *buf, size_t nbytes), (fd, buf, nbytes))
 ksyscall(write, (int fd, const void *buf, size_t nbytes), (fd, buf, nbytes))

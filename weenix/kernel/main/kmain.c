@@ -41,6 +41,7 @@
 #include "fs/stat.h"
 
 #include "test/kshell/kshell.h"
+/*#include "test/vfstest/vfstest.h"*/
 
 GDB_DEFINE_HOOK(boot)
 GDB_DEFINE_HOOK(initialized)
@@ -330,6 +331,9 @@ initproc_run(int arg1, void *arg2)
         while (!do_waitpid(-1, 0, &status));
         do_exit(0);
 #endif
+        
+        /*  run vfs test routine */
+        vfstest_main(1,NULL); 
 
 #ifdef __DRIVERS__
 
