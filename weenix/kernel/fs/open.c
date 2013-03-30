@@ -106,6 +106,7 @@ do_open(const char *filename, int oflags)
         }
         if(mode == -1){
             /*  invalid combination */
+            fput(file);
             return -EINVAL;
         }
 
@@ -116,9 +117,11 @@ do_open(const char *filename, int oflags)
         vnode_t* base = curproc -> p_cwd;
         int res = open_namev(filename, oflags, &res_vnode, base);
         if(res < 0){
+            fput(file);
             return res;/* including errors: ENAMETOOLONG, ENOTDIR, ENOENT */
         }
         if( ((res_vnode -> vn_mode & S_IFDIR) != 0) && (mode != FMODE_READ)){
+            fput(file);
             return -EISDIR;
         }
         
