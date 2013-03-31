@@ -80,7 +80,7 @@ do_open(const char *filename, int oflags)
         }
 
         /* 2. Call fget to get a fresh file_t */
-        file_t* file = fget(fd);
+        file_t* file = fget(-1);
         if(file == NULL){
             /* not sure for this error */
             return -ENOMEM;
@@ -96,9 +96,9 @@ do_open(const char *filename, int oflags)
         if(oflags == O_RDONLY)
             mode = FMODE_READ;
 
-        else if(  ((oflags & O_WRONLY) != 0) || ((oflags & O_RDWR) != 0)){
+        else if(  ((oflags & O_WRONLY) != 0) || ((oflags & O_RDWR) != 0) || ((oflags & O_CREAT) != 0) || ((oflags & O_TRUNC) != 0) || ((oflags & O_APPEND) != 0) ){
             if( (oflags & O_APPEND) != 0){
-                mode = FMODE_APPEND;
+                mode = FMODE_APPEND | FMODE_WRITE;
             }
             else{
                 mode = FMODE_WRITE;
@@ -120,6 +120,7 @@ do_open(const char *filename, int oflags)
             fput(file);
             return res;/* including errors: ENAMETOOLONG, ENOTDIR, ENOENT */
         }
+
         if( ((res_vnode -> vn_mode & S_IFDIR) != 0) && (mode != FMODE_READ)){
             fput(file);
             return -EISDIR;
@@ -128,7 +129,11 @@ do_open(const char *filename, int oflags)
         /* 6. Fill in the fields of the file_t */
         file->f_vnode = res_vnode;
         file->f_refcount = res_vnode -> vn_refcount;
-        file->f_pos = 0;
+        
+        if(oflags & O_APPEND)
+            file->f_pos = res_vnode->vn_len;
+        else
+            file->f_pos = 0;
 
         /* 7. return new fd */
         return fd;

@@ -70,8 +70,9 @@ do_write(int fd, const void *buf, size_t nbytes)
 {
 
         file_t* file = fget(fd);
-        if(file->f_mode == FMODE_READ){
-            fput(file);
+        
+        if(file == NULL || file->f_mode == FMODE_READ){
+            if(file) fput(file);
             return -EBADF;
         }
 
@@ -292,11 +293,22 @@ do_rmdir(const char *path)
         
         const char* name = NULL;
         size_t namelen;
-        vnode_t* dir_vnode = NULL, *res_vnode = NULL;
+        vnode_t* dir_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
-        if(res < 0)
+        if(res < 0){
+            if(dir_vnode)
+                vput(dir_vnode);
             return res;
-        
+        }
+        /* check the final component */
+        if(strcmp(name, ".") == 0){
+            vput(dir_vnode);
+            return -EINVAL;
+        }
+        else if(strcmp(name, "..") == 0){
+            vput(dir_vnode);
+            return -ENOTEMPTY;
+        }
         res = dir_vnode->vn_ops->rmdir(dir_vnode, name, namelen);
         vput(dir_vnode);
         return res;
@@ -322,9 +334,28 @@ do_unlink(const char *path)
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
-        if(res < 0)
+        if(res < 0){
+            if(dir_vnode)
+                vput(dir_vnode);
             return res;
-        
+        }
+        /*  if it is  directory, then return EPERM*/
+        res = lookup(dir_vnode, name, namelen, &res_vnode);
+        if(res < 0){
+            if(dir_vnode)
+                vput(dir_vnode);
+            if(res_vnode)
+                vput(res_vnode);
+            return res;
+        }
+
+        if(res_vnode -> vn_mode == S_IFDIR){
+            if(dir_vnode)
+                vput(dir_vnode);
+            vput(res_vnode);
+            return -EPERM;   
+        }
+
         res = dir_vnode->vn_ops->unlink(dir_vnode, name, namelen);
         vput(dir_vnode);
         return res;

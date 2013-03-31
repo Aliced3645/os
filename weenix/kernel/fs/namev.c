@@ -31,9 +31,13 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
         if(dir == NULL || name == NULL)
             return -1;
 
-        if(strcmp(name, ".") == 0)
-            result = &dir;
+        if(strcmp(name, ".") == 0){
+            *result = dir;
+            vref(dir);
+            return 0;
+        }
         
+
         if(dir -> vn_ops -> lookup == NULL)
             return -ENOTDIR;
         
@@ -126,6 +130,12 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             strncpy(next_name, pathname + start_index, end_index - start_index + 1);
             next_name[end_index - start_index + 1] = '\0';
             if(terminate == 1){
+                /* check if dir */
+                if(prev_v_node -> vn_mode != S_IFDIR){
+                    vput(prev_v_node);
+                    kfree(next_name);
+                    return -ENOTDIR;
+                }
                 *namelen = strlen(next_name);
                 *name = next_name;
                 /*strncpy(*name, *next_name, *namelen);*/
