@@ -30,7 +30,7 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
 {
         if(dir == NULL || name == NULL)
             return -1;
-
+        
         if(strcmp(name, ".") == 0){
             *result = dir;
             vref(dir);
@@ -83,10 +83,14 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
         /* check the base first */
         vnode_t* prev_v_node = NULL;
         vnode_t* next_v_node = NULL;
-
+        
+        int slash_counter = 0;
         if(pathname[0] == '/'){
             prev_v_node = vfs_root_vn;
+            while(pathname[slash_counter] == '/')
+                slash_counter ++;
         }
+
         else{
             if(base == NULL){
                 prev_v_node = curproc->p_cwd;
@@ -98,16 +102,22 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             
         vref(prev_v_node);
 
-        int start_index = (pathname[0] == '/' ? 1 : 0);
+        int start_index = (pathname[0] == '/' ? slash_counter : 0);
         int end_index = 0;
         int terminate = 0;
+        slash_counter = 0;
         /*  do the finding */
         while(1){
 
             int i = start_index;
+            
             while(i < (int) strlen(pathname)){
                 if(pathname[i] == '/'){
                     end_index = i - 1;
+                    slash_counter = i;
+                    while(pathname[slash_counter] == '/')
+                        slash_counter ++;
+                    slash_counter = slash_counter - i;
                     break;
                 }
                 i ++;
@@ -116,6 +126,11 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             if(i == (int)strlen(pathname)){
                 /*t is the end..*/
                 end_index = (int)strlen(pathname)  - 1;
+                terminate = 1;
+            }
+              
+            else if( i + slash_counter == (int)strlen(pathname)){
+                end_index = i - 1;
                 terminate = 1;
             }
             
@@ -152,10 +167,10 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             
             /* decrement the reference count */
             vput(prev_v_node);
-            start_index = end_index + 2;
+            start_index = end_index + slash_counter + 1;
             prev_v_node = next_v_node;
             kfree(next_name);
-
+            slash_counter = 0;
         }
         return 0;
 }

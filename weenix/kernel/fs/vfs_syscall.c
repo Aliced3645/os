@@ -94,7 +94,7 @@ do_write(int fd, const void *buf, size_t nbytes)
         file->f_pos += res;
         fput(file);
         
-        return -1;
+        return res;
 }
 
 /*
@@ -482,7 +482,7 @@ do_chdir(const char *path)
         }
         if(new_dir->vn_mode != S_IFDIR){
             vput(new_dir);
-            return ENOTDIR;
+            return -ENOTDIR;
         }
 
         curproc -> p_cwd = new_dir;
@@ -607,6 +607,9 @@ do_lseek(int fd, int offset, int whence)
 int
 do_stat(const char *path, struct stat *buf)
 {
+        
+        if(strlen(path) == 0)
+            return -ENOENT;
 
         vnode_t* res_vnode = NULL;
         int res = open_namev(path, O_RDWR, &res_vnode, curproc -> p_cwd);
