@@ -376,6 +376,7 @@ vfstest_paths(void)
         paths_equal(".", "1/./2/./3/./.././.././.././4/./5/./6/./.././.././..");
 
         /* extra slashes */
+        paths_equal("///", "/");
         paths_equal("1/2/3", "1/2/3/");
         paths_equal("1/2/3", "1//2/3");
         paths_equal("1/2/3", "1/2//3");

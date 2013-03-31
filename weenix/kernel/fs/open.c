@@ -73,6 +73,21 @@ get_empty_fd(proc_t *p)
 int
 do_open(const char *filename, int oflags)
 {
+        /* check invalid combinations */
+        int wr = oflags & O_WRONLY;
+        int rdwr = oflags & O_RDWR;
+        int rd = 0;
+        if( (wr == 0) && (rdwr == 0)){
+            rd = 1;
+        }
+        int append = oflags & O_APPEND;
+        int trunc = oflags &O_TRUNC;
+        int creat = oflags & O_CREAT;
+
+        if( (wr != 0) && (rdwr != 0) ){
+            return -EINVAL;
+        }
+        
         /* 1.  Get the next empty file descriptor */
         int fd = get_empty_fd(curproc);
         if(fd == -EMFILE){
@@ -93,17 +108,23 @@ do_open(const char *filename, int oflags)
          *    O_APPEND.
          */
         int mode = -1;
-        if(oflags == O_RDONLY)
-            mode = FMODE_READ;
 
-        else if(  ((oflags & O_WRONLY) != 0) || ((oflags & O_RDWR) != 0) || ((oflags & O_CREAT) != 0) || ((oflags & O_TRUNC) != 0) || ((oflags & O_APPEND) != 0) ){
-            if( (oflags & O_APPEND) != 0){
-                mode = FMODE_APPEND | FMODE_WRITE;
+        if( (wr != 0) ||(rd != 0) || (rdwr != 0)){
+            if(rd != 0){
+                mode = FMODE_READ;
             }
-            else{
+            else if(wr != 0){
                 mode = FMODE_WRITE;
             }
+            else if(rdwr != 0){
+                mode = FMODE_READ | FMODE_WRITE;
+            }
+            /* last check append */
+            if( append != 0){
+                mode |= FMODE_APPEND;
+            }
         }
+
         if(mode == -1){
             /*  invalid combination */
             fput(file);
@@ -129,10 +150,11 @@ do_open(const char *filename, int oflags)
         /* 6. Fill in the fields of the file_t */
         file->f_vnode = res_vnode;
         file->f_refcount = res_vnode -> vn_refcount;
-        
+        /*
         if(oflags & O_APPEND)
             file->f_pos = res_vnode->vn_len;
         else
+        */
             file->f_pos = 0;
 
         /* 7. return new fd */

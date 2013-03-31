@@ -47,7 +47,13 @@ do_read(int fd, void *buf, size_t nbytes)
         file_t* file = fget(fd);
         if(file == NULL)
             return -EBADF;
-        if((file->f_vnode->vn_mode & S_IFDIR) != 0){
+
+        else if( (file->f_mode &  FMODE_READ) == 0){
+            fput(file);
+            return -EBADF;
+        }
+
+        else if((file->f_vnode->vn_mode & S_IFDIR) != 0){
             fput(file);
             return -EISDIR;
         }
@@ -85,8 +91,10 @@ do_write(int fd, const void *buf, size_t nbytes)
         int res;
         if( (file->f_mode & FMODE_APPEND) != 0){
             res = do_lseek( fd, 0, SEEK_END);
-            if(res < 0) 
+            if(res < 0) {
+                fput(file);
                 return res;
+            }
         }
         
         vnode_t* file_vnode = file->f_vnode;
@@ -111,7 +119,6 @@ do_close(int fd)
         if(fd < 0 || fd >= NFILES){
             return -EBADF;
         }
-
 
         if(curproc->p_files[fd] == NULL)
             return -EBADF;
@@ -563,30 +570,34 @@ do_lseek(int fd, int offset, int whence)
         }
         int length = file -> f_vnode -> vn_len;
         int res = 0;
+
         if(whence == SEEK_SET){
             if(offset >= 0){
                 file -> f_pos = offset;
                 res = offset;
             }
             else{
-                res = -EINVAL;
+                fput(file);
+                return  -EINVAL;
             }
         }
         else if(whence == SEEK_END){
-            if(offset >= 0){
-                file -> f_pos = length + offset;
-                res = file->f_pos;
+            res = length + offset;
+            if(res < 0){
+                fput(file);
+                return -EINVAL;
             }
-            else
-                res = -EINVAL;
+            else 
+                file -> f_pos = res;
         }
         else if(whence == SEEK_CUR){
-            if(offset >= 0){
-                file -> f_pos += offset;
-                res = file -> f_pos;
+            res = file -> f_pos + offset;
+            if(res < 0){
+                fput(file);
+                return -EINVAL;
             }
-            else
-                res = -EINVAL;
+            else 
+                file -> f_pos = res;
         }
 
         fput(file);
