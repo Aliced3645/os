@@ -41,6 +41,9 @@
 int
 do_read(int fd, void *buf, size_t nbytes)
 {
+        if(fd < 0 || fd >= NFILES){
+            return -EBADF;
+        }
         file_t* file = fget(fd);
         if(file == NULL)
             return -EBADF;
@@ -68,6 +71,9 @@ do_read(int fd, void *buf, size_t nbytes)
 int
 do_write(int fd, const void *buf, size_t nbytes)
 {
+        if( fd < 0 || fd >= NFILES ){
+            return -EBADF;
+        }
 
         file_t* file = fget(fd);
         
@@ -101,6 +107,12 @@ do_write(int fd, const void *buf, size_t nbytes)
 int
 do_close(int fd)
 {
+        
+        if(fd < 0 || fd >= NFILES){
+            return -EBADF;
+        }
+
+
         if(curproc->p_files[fd] == NULL)
             return -EBADF;
         
@@ -130,6 +142,11 @@ do_close(int fd)
 int
 do_dup(int fd)
 {
+
+        if(fd < 0 || fd >= NFILES){
+            return -EBADF;
+        }
+
         file_t* file = fget(fd);
         if(file == NULL){
             return -EBADF;
@@ -158,13 +175,12 @@ do_dup(int fd)
 int
 do_dup2(int ofd, int nfd)
 {
-        file_t* file = fget(ofd);
-        if(file == NULL){
+        if(ofd < 0 || ofd >= NFILES || nfd >= NFILES || nfd < 0){
             return -EBADF;
         }
+        file_t* file = fget(ofd);
 
-        if(nfd >= NFILES){
-            fput(file);
+        if(file == NULL){
             return -EBADF;
         }
         
@@ -494,6 +510,11 @@ do_chdir(const char *path)
 int
 do_getdent(int fd, struct dirent *dirp)
 {
+
+        if(fd < 0 || fd >= NFILES){
+            return -EBADF;
+        }
+
         file_t* dir = fget(fd);
         if(dir == NULL){
             return -EBADF;
@@ -509,7 +530,10 @@ do_getdent(int fd, struct dirent *dirp)
         dir->f_pos += offset;
         /*  not sure whether to put */
         fput(dir);
-        return offset;
+        if(offset != 0)
+            return sizeof(dirent_t);
+        else 
+            return 0;
 }
 
 /*
@@ -525,6 +549,10 @@ do_getdent(int fd, struct dirent *dirp)
 int
 do_lseek(int fd, int offset, int whence)
 {
+        if(fd < 0 || fd >= NFILES){
+            return -EBADF;
+        }
+
         if( (whence != SEEK_END) && (whence != SEEK_CUR) && (whence != SEEK_SET) ){
             return -EINVAL;
         }
