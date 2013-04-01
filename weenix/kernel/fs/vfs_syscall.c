@@ -102,7 +102,6 @@ do_write(int fd, const void *buf, size_t nbytes)
         res = file_vnode->vn_ops->write(file_vnode, file->f_pos, buf, nbytes);
         file->f_pos += res;
         fput(file);
-        
         return res;
 }
 
@@ -268,7 +267,7 @@ do_mknod(const char *path, int mode, unsigned devid)
         /*  make the node */
             res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
 
-        vput(dir_vnode);
+         vput(dir_vnode); 
         if(res_vnode){
             vput(res_vnode);
         }
@@ -317,8 +316,9 @@ do_mkdir(const char *path)
 
         if(res == -ENOENT)
             res = dir_vnode -> vn_ops -> mkdir(dir_vnode, name, namelen);
-        
+          
         vput(dir_vnode);
+        
         if(res_vnode != NULL)
             vput(res_vnode);
         return res;

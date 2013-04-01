@@ -436,8 +436,10 @@ special_file_read(vnode_t *file, off_t offset, void *buf, size_t count)
         /*  do  */
         if( (file->vn_bdev != NULL) || (file->vn_cdev == NULL))
             return -ENOTSUP;
-        
-        int res = file->vn_ops->read(file, offset, buf, count);
+        if( file->vn_mode == S_IFBLK) return -ENOTSUP;
+        int res = -1;
+        if (file->vn_mode == S_IFCHR)
+            res = file->vn_cdev->cd_ops->read(file->vn_cdev, offset, buf, count); 
         return res;
 }
 
@@ -452,8 +454,11 @@ special_file_write(vnode_t *file, off_t offset, const void *buf, size_t count)
 {
         if( (file->vn_bdev != NULL) || (file->vn_cdev == NULL))
             return -ENOTSUP;
-        
-        int res = file->vn_ops->write(file, offset, buf, count);
+
+        if( file->vn_mode == S_IFBLK) return -ENOTSUP;
+        int res = -1;
+        if (file->vn_mode == S_IFCHR)
+            res = file->vn_cdev->cd_ops->write(file->vn_cdev, offset, buf, count);
         return res;
   
 }

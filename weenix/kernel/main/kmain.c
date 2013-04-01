@@ -340,9 +340,9 @@ initproc_run(int arg1, void *arg2)
 #endif
         
         /*  run vfs test routine */
-           /*          
+           /*             
             vfstest_main(1,NULL);  
-              do_exit(0); 
+                do_exit(0);  
             */
 #ifdef __DRIVERS__
 
