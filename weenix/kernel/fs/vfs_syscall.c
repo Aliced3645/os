@@ -203,12 +203,15 @@ do_dup2(int ofd, int nfd)
                 do_close(nfd);
                 curproc -> p_files[nfd] = file;
             }
+            else{
+                fput(file);
+            }
         }
 
         else{
             curproc -> p_files[nfd] = file;
         }
-        
+          
         return nfd;
 }
 

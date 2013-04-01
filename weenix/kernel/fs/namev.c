@@ -136,6 +136,7 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             
             int component_length = end_index - start_index + 2;
             if(component_length > STR_MAX){
+                vput(prev_v_node);
                 return -ENAMETOOLONG;
             }
 
