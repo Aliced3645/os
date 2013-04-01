@@ -37,7 +37,6 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
             return 0;
         }
         
-
         if(dir -> vn_ops -> lookup == NULL)
             return -ENOTDIR;
         
@@ -45,11 +44,12 @@ lookup(vnode_t *dir, const char *name, size_t len, vnode_t **result)
         if(dir -> vn_ops -> lookup(dir, name, len, result) == -ENOENT){
             return -ENOENT;
         }
-        
+        /*  
         if(*result != NULL){
             vref(*result);    
         }
-        
+        */
+
         return 0;
 }
 
@@ -200,19 +200,22 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         vnode_t* dir_vnode = NULL;
         int res;
         if( (res = dir_namev(pathname, &namelen, &name, base, &dir_vnode))  != 0){
+            if(dir_vnode != NULL)
+                vput(dir_vnode);
             return res;
         }
 
         /* Now we get the vnode of parent directory and the name of the target
          * file*/
         vnode_t* result = NULL;
-        if(lookup(dir_vnode, name, namelen, &result) == -ENOENT){
+        res = lookup(dir_vnode, name, namelen, &result) ;
+        if( res == -ENOENT){
             if((flag & O_CREAT) != 0){
                 if( (res = dir_vnode -> vn_ops -> create(dir_vnode, name, namelen, &result)) < 0){ 
                     vput(dir_vnode);
                     return res;
                 }
-                vref(result);
+
             }
             else{
                 vput(dir_vnode);
@@ -222,7 +225,6 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         vput(dir_vnode);
         *res_vnode = result;
         return 0;
-
 }
 
 /* #ifdef __GETCWD__*/

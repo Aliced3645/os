@@ -84,7 +84,8 @@ do_write(int fd, const void *buf, size_t nbytes)
         file_t* file = fget(fd);
         
         if(file == NULL || file->f_mode == FMODE_READ){
-            if(file) fput(file);
+            if(file != NULL)
+                fput(file);
             return -EBADF;
         }
 
@@ -115,7 +116,8 @@ do_write(int fd, const void *buf, size_t nbytes)
 int
 do_close(int fd)
 {
-        
+
+       
         if(fd < 0 || fd >= NFILES){
             return -EBADF;
         }
@@ -124,9 +126,14 @@ do_close(int fd)
             return -EBADF;
         
         file_t* file = curproc->p_files[fd];
+        
+        if(fd == 0 && file->f_vnode->vn_vno == 10){
+            int i = 0;
+        }
+
         curproc->p_files[fd] = NULL;
         fput(file);
-
+        
         return 0;
 }
 
@@ -201,7 +208,7 @@ do_dup2(int ofd, int nfd)
         else{
             curproc -> p_files[nfd] = file;
         }
-
+        
         return nfd;
 }
 
@@ -239,18 +246,26 @@ do_mknod(const char *path, int mode, unsigned devid)
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
-        if(res < 0)
+        if(res < 0){
+            vput(dir_vnode);
+            if(name != NULL)
+                kfree((void*)name);
             return res;
+        }
         
         /*  check if already exists */
         res = lookup(dir_vnode, name, namelen, &res_vnode);
         if(res == 0){
+            vput(dir_vnode);
+            vput(res_vnode);
+            kfree((void*)name);
             return -EEXIST;
         }
 
         /*  make the node */
         res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
         vput(dir_vnode);
+        kfree((void*)name);
         return res;
 }
 
@@ -275,12 +290,24 @@ do_mkdir(const char *path)
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
-        if(res < 0)
+        if(res < 0){
+            if(name != NULL)
+                kfree((void*)name);
+            if(dir_vnode != NULL) 
+                vput(dir_vnode);
             return res;
+        }
 
         res = lookup(dir_vnode, name, namelen, &res_vnode);
         if(res == 0 || res != -ENOENT){
-            if(res == 0) return -EEXIST;
+            kfree((void*)name);
+            if(dir_vnode != NULL)
+                vput(dir_vnode);
+            if(res_vnode != NULL)
+                vput(res_vnode);
+            if(res == 0) {
+                return -EEXIST;
+            }
             else return res;
         }
 
@@ -288,7 +315,9 @@ do_mkdir(const char *path)
             res = dir_vnode -> vn_ops -> mkdir(dir_vnode, name, namelen);
         
         vput(dir_vnode);
-
+        if(res_vnode != NULL)
+            vput(res_vnode);
+        kfree((void*)name);
         return res;
 }
 
@@ -313,7 +342,6 @@ do_mkdir(const char *path)
 int
 do_rmdir(const char *path)
 {
-        
         const char* name = NULL;
         size_t namelen;
         vnode_t* dir_vnode = NULL;
@@ -332,6 +360,7 @@ do_rmdir(const char *path)
             vput(dir_vnode);
             return -ENOTEMPTY;
         }
+
         res = dir_vnode->vn_ops->rmdir(dir_vnode, name, namelen);
         vput(dir_vnode);
         return res;
@@ -381,6 +410,7 @@ do_unlink(const char *path)
 
         res = dir_vnode->vn_ops->unlink(dir_vnode, name, namelen);
         vput(dir_vnode);
+        vput(res_vnode);
         return res;
 }
 
@@ -517,7 +547,9 @@ do_chdir(const char *path)
 int
 do_getdent(int fd, struct dirent *dirp)
 {
-
+        if(fd == 0){
+            int i = 1;
+        }
         if(fd < 0 || fd >= NFILES){
             return -EBADF;
         }

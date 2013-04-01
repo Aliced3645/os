@@ -127,6 +127,7 @@ do_open(const char *filename, int oflags)
 
         if(mode == -1){
             /*  invalid combination */
+            curproc -> p_files[fd] = NULL;
             fput(file);
             return -EINVAL;
         }
@@ -138,24 +139,23 @@ do_open(const char *filename, int oflags)
         vnode_t* base = curproc -> p_cwd;
         int res = open_namev(filename, oflags, &res_vnode, base);
         if(res < 0){
+            curproc -> p_files[fd] = NULL;
+            if(res_vnode)
+                vput(res_vnode);
             fput(file);
             return res;/* including errors: ENAMETOOLONG, ENOTDIR, ENOENT */
         }
 
         if( ((res_vnode -> vn_mode & S_IFDIR) != 0) && (mode != FMODE_READ)){
+            curproc -> p_files[fd] = NULL;
+            vput(res_vnode);
             fput(file);
             return -EISDIR;
         }
         
         /* 6. Fill in the fields of the file_t */
         file->f_vnode = res_vnode;
-        file->f_refcount = res_vnode -> vn_refcount;
-        /*
-        if(oflags & O_APPEND)
-            file->f_pos = res_vnode->vn_len;
-        else
-        */
-            file->f_pos = 0;
+        file->f_pos = 0;
 
         /* 7. return new fd */
         return fd;
