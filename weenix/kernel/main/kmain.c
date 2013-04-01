@@ -54,6 +54,7 @@ static void      *initproc_run(int arg1, void *arg2);
 static void       hard_shutdown(void);
 
 static context_t bootstrap_context;
+int vfstest_main(int argc, char** argv);
 
 /**
  * This is the first real C function ever called. It performs a lot of
@@ -93,8 +94,10 @@ kmain()
         kthread_init();
 
 #ifdef __DRIVERS__
+        
         bytedev_init();
         blockdev_init();
+        
 #endif
 
         void *bstack = page_alloc();
@@ -166,7 +169,9 @@ idleproc_run(int arg1, void *arg2)
 
         init_call_all();
         GDB_CALL_HOOK(initialized);
-
+          
+        kshell_add_command("vfstest", (int (*)(int, char**))vfstest_main, "TA vfstests");
+        
         /* Create other kernel threads (in order) */
         /* PROCS BLANK {{{ */
 #ifdef __SHADOWD__
@@ -217,6 +222,7 @@ idleproc_run(int arg1, void *arg2)
                 if ((fd = do_open(path, O_RDONLY)) < 0) {
                         KASSERT(!do_mknod(path, S_IFCHR, MKDEVID(2, ii)));
                 } else {
+                        dbg(DBG_INIT, "ttyerror\n");
                         do_close(fd);
                 }
         }
@@ -227,6 +233,7 @@ idleproc_run(int arg1, void *arg2)
                 if ((fd = do_open(path, O_RDONLY)) < 0) {
                         KASSERT(!do_mknod(path, S_IFBLK, MKDEVID(1, ii)));
                 } else {
+                        dbg(DBG_INIT, "hdaerror\n");
                         do_close(fd);
                 }
         }
@@ -333,9 +340,10 @@ initproc_run(int arg1, void *arg2)
 #endif
         
         /*  run vfs test routine */
-        vfstest_main(1,NULL);  
-        do_exit(0);
-
+           /*          
+            vfstest_main(1,NULL);  
+              do_exit(0); 
+            */
 #ifdef __DRIVERS__
 
         /* If we do not have VM yet, run the kernel shell */
@@ -347,7 +355,7 @@ initproc_run(int arg1, void *arg2)
                 panic("init: Couldn't create kernel shell\n");
 
         while (kshell_execute_next(kshell));
-        kshell_destroy(kshell);
+        kshell_destroy(kshell); 
 #endif
         /* PROCS }}} */
 

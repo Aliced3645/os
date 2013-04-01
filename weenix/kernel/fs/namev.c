@@ -140,21 +140,22 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
                 return -ENAMETOOLONG;
             }
 
-            char* next_name = (char*)kmalloc(component_length);
+            char next_name[STR_MAX];
+            memset(next_name, 0, STR_MAX);
             /*  char next_name[end_index - start_index + 2]; */
+             strncpy(next_name, pathname + start_index, component_length - 1); 
             
-            strncpy(next_name, pathname + start_index, end_index - start_index + 1);
             next_name[end_index - start_index + 1] = '\0';
             if(terminate == 1){
                 /* check if dir */
                 if(prev_v_node -> vn_mode != S_IFDIR){
                     vput(prev_v_node);
-                    kfree(next_name);
                     return -ENOTDIR;
                 }
+
                 *namelen = strlen(next_name);
-                *name = next_name;
-                /*strncpy(*name, *next_name, *namelen);*/
+                /*name = next_name;*/
+                strcpy((char*)*name, next_name);
                 *res_vnode = prev_v_node;
                 break;
             }
@@ -162,7 +163,6 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             if( (res = lookup(prev_v_node, next_name, strlen(next_name), &next_v_node)) != 0){
                 /* no entry or not dir */
                 vput(prev_v_node);
-                kfree(next_name);
                 return res;
             }
             
@@ -170,7 +170,6 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             vput(prev_v_node);
             start_index = end_index + slash_counter + 1;
             prev_v_node = next_v_node;
-            kfree(next_name);
             slash_counter = 0;
         }
         return 0;
@@ -197,7 +196,9 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         if(pathname == NULL)
             return -1;
         size_t namelen;
-        const char* name;
+        char cname[STR_MAX];
+        const char* name = cname;
+
         vnode_t* dir_vnode = NULL;
         int res;
         if( (res = dir_namev(pathname, &namelen, &name, base, &dir_vnode))  != 0){
@@ -216,7 +217,6 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
                     vput(dir_vnode);
                     return res;
                 }
-
             }
             else{
                 vput(dir_vnode);
@@ -228,7 +228,7 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         return 0;
 }
 
-/* #ifdef __GETCWD__*/
+/*  #ifdef __GETCWD__ */
 
 /* Finds the name of 'entry' in the directory 'dir'. The name is writen
  * to the given buffer. On success 0 is returned. If 'dir' does not
@@ -303,8 +303,7 @@ lookup_dirpath(vnode_t *dir, char *buf, size_t osize)
         size_t total_length = 0;
 
         while(up_vnode != low_vnode){
-            char* namebuf = kmalloc(STR_MAX);
-            memset(namebuf, 0, STR_MAX);
+            char namebuf[STR_MAX];
             if( ( lookup_name(up_vnode, low_vnode, namebuf + 1, STR_MAX - 1)) != 0){
                 return -1;
             }
@@ -353,10 +352,6 @@ lookup_dirpath(vnode_t *dir, char *buf, size_t osize)
         
         return 0;
 }
- /* #endif  __GETCWD__ */
-
-
-
-
-
-
+/*
+#endif  __GETCWD__
+*/

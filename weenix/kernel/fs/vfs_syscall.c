@@ -245,14 +245,14 @@ do_mknod(const char *path, int mode, unsigned devid)
 {
         if( (mode != S_IFCHR) && (mode != S_IFBLK) )
             return -EINVAL;
-        const char* name = NULL;
+
+        char cname[STR_MAX];
+        const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
         if(res < 0){
             vput(dir_vnode);
-            if(name != NULL)
-                kfree((void*)name);
             return res;
         }
         
@@ -261,14 +261,17 @@ do_mknod(const char *path, int mode, unsigned devid)
         if(res == 0){
             vput(dir_vnode);
             vput(res_vnode);
-            kfree((void*)name);
             return -EEXIST;
         }
-
+        
+        if(res == -ENOENT)
         /*  make the node */
-        res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
+            res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
+
         vput(dir_vnode);
-        kfree((void*)name);
+        if(res_vnode){
+            vput(res_vnode);
+        }
         return res;
 }
 
@@ -289,13 +292,12 @@ do_mknod(const char *path, int mode, unsigned devid)
 int
 do_mkdir(const char *path)
 {
-        const char* name = NULL;
+        char cname[STR_MAX];
+        const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
         if(res < 0){
-            if(name != NULL)
-                kfree((void*)name);
             if(dir_vnode != NULL) 
                 vput(dir_vnode);
             return res;
@@ -303,7 +305,6 @@ do_mkdir(const char *path)
 
         res = lookup(dir_vnode, name, namelen, &res_vnode);
         if(res == 0 || res != -ENOENT){
-            kfree((void*)name);
             if(dir_vnode != NULL)
                 vput(dir_vnode);
             if(res_vnode != NULL)
@@ -320,7 +321,6 @@ do_mkdir(const char *path)
         vput(dir_vnode);
         if(res_vnode != NULL)
             vput(res_vnode);
-        kfree((void*)name);
         return res;
 }
 
@@ -345,7 +345,8 @@ do_mkdir(const char *path)
 int
 do_rmdir(const char *path)
 {
-        const char* name = NULL;
+        char cname[STR_MAX];
+        const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
@@ -385,7 +386,9 @@ do_rmdir(const char *path)
 int
 do_unlink(const char *path)
 {
-        const char* name = NULL;
+        char cname[STR_MAX];
+        const char* name = cname;
+
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
         int res = dir_namev(path, &namelen, &name, curproc->p_cwd, &dir_vnode);
@@ -447,7 +450,8 @@ do_link(const char *from, const char *to)
     }
 
     vnode_t* dir_vnode;
-    const char* name = NULL;
+    char cname[STR_MAX];
+    const char* name = cname;
     size_t namelen;
 
     res = dir_namev(to, &namelen, &name, curproc->p_cwd, &dir_vnode);

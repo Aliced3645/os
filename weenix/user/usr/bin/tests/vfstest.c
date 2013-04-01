@@ -926,11 +926,12 @@ int main(int argc, char **argv)
 int vfstest_main(int argc, char **argv)
 #endif
 {
+    /*  
         if (argc != 1) {
                 fprintf(stderr, "USAGE: vfstest\n");
                 return 1;
         }
-
+    */
         test_init();
         vfstest_start();
 

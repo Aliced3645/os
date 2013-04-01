@@ -235,7 +235,6 @@ vput(struct vnode *vn)
 
         KASSERT(!(VN_BUSY & vn->vn_flags));
 
-
         dbg(DBG_VNREF, "vput: 0x%p, 0x%p ino %ld, down to %d, nrespages = %d\n",
             vn, vn->vn_fs, (long)vn->vn_vno, vn->vn_refcount - 1, vn->vn_nrespages);
 
