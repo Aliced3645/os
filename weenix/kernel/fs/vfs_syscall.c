@@ -245,7 +245,7 @@ do_mknod(const char *path, int mode, unsigned devid)
         if( (mode != S_IFCHR) && (mode != S_IFBLK) )
             return -EINVAL;
 
-        char cname[STR_MAX];
+        char cname[NAME_LEN];
         const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
@@ -291,7 +291,7 @@ do_mknod(const char *path, int mode, unsigned devid)
 int
 do_mkdir(const char *path)
 {
-        char cname[STR_MAX];
+        char cname[NAME_LEN];
         const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL, *res_vnode = NULL;
@@ -345,7 +345,7 @@ do_mkdir(const char *path)
 int
 do_rmdir(const char *path)
 {
-        char cname[STR_MAX];
+        char cname[NAME_LEN];
         const char* name = cname;
         size_t namelen;
         vnode_t* dir_vnode = NULL;
@@ -386,7 +386,7 @@ do_rmdir(const char *path)
 int
 do_unlink(const char *path)
 {
-        char cname[STR_MAX];
+        char cname[NAME_LEN];
         const char* name = cname;
 
         size_t namelen;
@@ -411,7 +411,7 @@ do_unlink(const char *path)
             if(dir_vnode)
                 vput(dir_vnode);
             vput(res_vnode);
-            return -EPERM;   
+            return -EISDIR;   
         }
 
         res = dir_vnode->vn_ops->unlink(dir_vnode, name, namelen);
@@ -424,7 +424,8 @@ do_unlink(const char *path)
  *      o open_namev(from)
  *      o dir_namev(to)
  *      o call the destination dir's (to) link vn_ops.
- *      o return the result of link, or an error
+ *      o return the result of link, or
+ *      an error
  *
  * Remember to vput the vnodes returned from open_namev and dir_namev.
  *
@@ -450,13 +451,14 @@ do_link(const char *from, const char *to)
     }
 
     vnode_t* dir_vnode;
-    char cname[STR_MAX];
+    char cname[NAME_LEN];
     const char* name = cname;
     size_t namelen;
 
     res = dir_namev(to, &namelen, &name, curproc->p_cwd, &dir_vnode);
     if(res < 0){
         vput(dir_vnode);
+        vput(from_vnode);
         return res;
     }
     
@@ -467,16 +469,18 @@ do_link(const char *from, const char *to)
         if(res == 0){
             vput(to_vnode);
             vput(from_vnode);
+            vput(dir_vnode);
             return -EEXIST;
         }
-
+        vput(dir_vnode);
         vput(from_vnode);
+        vput(to_vnode);
         return res;
     }
     
     res = dir_vnode->vn_ops->link(from_vnode, dir_vnode, name, namelen);
     vput(from_vnode);
-
+    vput(dir_vnode);
     return res;
 }
 

@@ -79,7 +79,10 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
         
         if(pathname == NULL)
             return -1;
-
+        
+        if(strlen(pathname) >= MAXPATHLEN){
+            return -ENAMETOOLONG;
+        }
         /* check the base first */
         vnode_t* prev_v_node = NULL;
         vnode_t* next_v_node = NULL;
@@ -135,13 +138,13 @@ dir_namev(const char *pathname, size_t *namelen, const char **name,
             }
             
             int component_length = end_index - start_index + 2;
-            if(component_length > STR_MAX){
+            if(component_length > NAME_LEN){
                 vput(prev_v_node);
                 return -ENAMETOOLONG;
             }
 
-            char next_name[STR_MAX];
-            memset(next_name, 0, STR_MAX);
+            char next_name[NAME_LEN];
+            memset(next_name, 0, NAME_LEN);
             /*  char next_name[end_index - start_index + 2]; */
              strncpy(next_name, pathname + start_index, component_length - 1); 
             
@@ -195,8 +198,11 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
 
         if(pathname == NULL)
             return -1;
+        if(strlen(pathname) >= MAXPATHLEN)
+            return -ENAMETOOLONG;
+
         size_t namelen;
-        char cname[STR_MAX];
+        char cname[NAME_LEN];
         const char* name = cname;
 
         vnode_t* dir_vnode = NULL;
@@ -228,7 +234,7 @@ open_namev(const char *pathname, int flag, vnode_t **res_vnode, vnode_t *base)
         return 0;
 }
 
-/*  #ifdef __GETCWD__ */
+#ifdef __GETCWD__ 
 
 /* Finds the name of 'entry' in the directory 'dir'. The name is writen
  * to the given buffer. On success 0 is returned. If 'dir' does not
@@ -352,6 +358,5 @@ lookup_dirpath(vnode_t *dir, char *buf, size_t osize)
         
         return 0;
 }
-/*
-#endif  __GETCWD__
-*/
+
+#endif

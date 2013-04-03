@@ -299,7 +299,7 @@ vfstest_mkdir(void)
         /* unlink and rmdir the inappropriate types */
         
         syscall_fail(rmdir("file"), ENOTDIR);
-        syscall_fail(unlink("dir"), EPERM);
+        syscall_fail(unlink("dir"), EISDIR);
         
         /* remove non-empty directory */
           
@@ -622,7 +622,7 @@ vfstest_open(void)
 
         /* Cannot unlink a directory */
         syscall_success(mkdir("file06", 0));
-        syscall_fail(unlink("file06"), EPERM);
+        syscall_fail(unlink("file06"), EISDIR);
         syscall_success(rmdir("file06"));
 
         /* Cannot unlink a non-existent file */
