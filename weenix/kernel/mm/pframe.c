@@ -302,10 +302,10 @@ pframe_get(struct mmobj *o, uint32_t pagenum, pframe_t **result)
         KASSERT(NULL != result);
 
 start:
-        //check if resident
+        /* check if resident */
         *result = pframe_get_resident(o, pagenum);
         if(*result == NULL){
-            //not resident, allocate new
+            /*not resident, allocate new*/
             *result = pframe_alloc(o, pagenum);
             if(*result == NULL){
                 return -1;
@@ -318,11 +318,11 @@ start:
             }
         }
         else{
-            //resident
+            /*resident*/
             if(pframe_is_busy(*result)){
-                //busy now.
-                sched_sleep_on((*result) ->pf_waitq);
-                //try again
+                /*busy now.*/
+                sched_sleep_on( &(*result) ->pf_waitq);
+                /*try again*/
                 goto start;
             }
         }
