@@ -297,7 +297,38 @@ pframe_fill(pframe_t *pf)
 int
 pframe_get(struct mmobj *o, uint32_t pagenum, pframe_t **result)
 {
-        NOT_YET_IMPLEMENTED("S5FS: pframe_get");
+
+        KASSERT(NULL != o);
+        KASSERT(NULL != result);
+
+start:
+        //check if resident
+        *result = pframe_get_resident(o, pagenum);
+        if(*result == NULL){
+            //not resident, allocate new
+            *result = pframe_alloc(o, pagenum);
+            if(*result == NULL){
+                return -1;
+            }
+            int res = (pframe_fill(*result) < 0);
+            if(res < 0){
+                pframe_free( *result );
+                *result = NULL;
+                return res;
+            }
+        }
+        else{
+            //resident
+            if(pframe_is_busy(*result)){
+                //busy now.
+                sched_sleep_on((*result) ->pf_waitq);
+                //try again
+                goto start;
+            }
+        }
+
+        KASSERT( !pframe_is_busy(*result) );
+        KASSERT( *result != NULL);
         return 0;
 }
 
