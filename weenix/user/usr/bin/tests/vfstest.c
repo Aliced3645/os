@@ -950,7 +950,7 @@ int vfstest_main(int argc, char **argv)
         vfstest_s5fs_vm();
 #endif
 
-        /*vfstest_infinite();*/
+ /*         vfstest_infinite();*/
 
         syscall_success(chdir(".."));
 
