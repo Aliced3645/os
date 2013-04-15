@@ -388,7 +388,17 @@ pframe_migrate(pframe_t *pf, mmobj_t *dest)
 void
 pframe_pin(pframe_t *pf)
 {
-        NOT_YET_IMPLEMENTED("S5FS: pframe_pin");
+    pframe_set_busy(pf);
+    if(!pframe_is_pinned(pf)){
+        /* pin for the first time */
+        list_remove(&pf->pf_link);
+        list_insert_tail(&pinned_list, &pf->pf_link);
+        nallocated --;
+        npinned ++;
+
+    }
+    pf->pf_pincount ++ ;
+    pframe_clear_busy(pf);
 }
 
 /*
@@ -404,7 +414,18 @@ pframe_pin(pframe_t *pf)
 void
 pframe_unpin(pframe_t *pf)
 {
-        NOT_YET_IMPLEMENTED("S5FS: pframe_unpin");
+    KASSERT(pframe_is_pinned(pf));
+
+    pframe_set_busy(pf);
+    pf->pf_pincount --;
+    if(!pframe_is_pinned(pf)){
+        /*  pin count reaches zero */
+        list_remove(&pf->pf_link);
+        list_insert_tail(&alloc_list, &pf->pf_link);
+        nallocated ++;
+        npinned --;
+    }
+    pframe_clear_busy(pf);
 }
 
 /*
