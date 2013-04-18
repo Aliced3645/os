@@ -45,6 +45,39 @@ static void s5_free_block(s5fs_t *fs, int block);
 static int s5_alloc_block(s5fs_t *);
 
 
+/* helper function, given an s5_inode_t and a block index, return the block
+ * number */
+/* if the indirect block has not been allocated while the index is in the
+ * indirect block, just return 0 
+ */
+ /*  return -1 if exceeds the maximum allowed blocks */
+uint32_t get_block_by_index(vnode_t* vnode, int index){
+    
+    KASSERT(vnode != NULL);
+
+    s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+    s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+    struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+
+    if(index < S5_NDIRECT_BLOCKS)
+        return inode -> s5_direct_blocks[index];
+
+    uint32_t indirect_block = inode -> s5_indirect_block;
+    if(indirect_block == 0)
+        return 0;
+
+    else{
+        pframe_t* indirect_block_frame;
+        int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
+        if(res < 0){
+            return 0;
+        }
+        uint32_t index_in_indirect = index - S5_NDIRECT_BLOCKS;
+        uint32_t* block_array = (uint32_t*)indirect_block_frame->pf_addr;
+        return block_array[index_in_indirect];
+    }
+}
+
 /*
  * Return the disk-block number for the given seek pointer (aka file
  * position).
@@ -186,16 +219,10 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         
         KASSERT(vnode != NULL);
         s5fs_t* s5 = VNODE_TO_S5FS(vnode);
-        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
 
-        int block_num = s5_seek_to_block(vnode, seek, 1);
-        if(block_num < 0){
-            /*  seek exceeds the range */
-            return -ENOSPC;
-        }
         /*  get the block frame to write to */
-        pframe_t* block_frame;
-        int res = pframe_get(s5obj, block_num, &block_frame);
+        void* block_frame = NULL;
+        int res = vnode -> vn_ops -> fillpage(vnode, seek, block_frame);
         if(res < 0) return res;
 
         /*  get the start location (offset) in the block */
@@ -205,33 +232,36 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         /* look to see if remaining space coudl be written */
         uint32_t to_write = len;
         while(to_write > 0){
-            pframe_pin(block_frame);
             if(to_write <= remaining){
-                memcpy( (char*) block_frame->pf_addr + offset, bytes + written, to_write);
+                memcpy( (char*) block_frame + offset, bytes + written, to_write);
+                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                if(res < 0) return res;
                 written += to_write;
                 to_write = 0;
                 offset = 0;
             }
             else{
-                memcpy( (char*) block_frame->pf_addr + offset, bytes + written, remaining);
+                memcpy( (char*) block_frame + offset, bytes + written, remaining);
+                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                if(res < 0) return res;
                 to_write -= remaining;
                 written += remaining;
                 offset = 0;
             }
-            pframe_dirty(block_frame);
-            pframe_unpin(block_frame);
             /*see whether we need to go to next block*/
             if(to_write > 0){
-                block_num = s5_seek_to_block(vnode, seek + written, 1);
-                if(block_num < 0){
-                    /*  seek exceeds the range */
+                int res = vnode -> vn_ops -> fillpage(vnode, seek + written, block_frame);
+                /*  exceeded the capacity */
+                if(res < 0){
                     return written;
                 }
-                int res = pframe_get(s5obj, block_num, &block_frame);
-                if(res < 0) return res;
                 remaining = S5_BLOCK_SIZE;
             }
         }
+
+        /*  update the frame of vnode */
+        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+        s5_dirty_inode(s5, inode);
         return written;
 }
 
@@ -258,8 +288,72 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
 int
 s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_read_file");
-        return -1;
+        KASSERT(vnode != NULL);
+        KASSERT(dest != NULL);
+
+        /*  get the block frame to read from */
+        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+        s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+
+        uint32_t block_index = S5_DATA_BLOCK(seek);
+        if(block_index >= S5_MAX_FILE_BLOCKS)
+            return 0;
+        /*  get the start location (offset) in the block */
+        uint32_t offset = S5_DATA_OFFSET(seek);
+        uint32_t remaining = S5_BLOCK_SIZE - offset;
+        int has_read = 0;
+        uint32_t to_read = len;
+
+        while(to_read > 0){
+            if(to_read <= remaining){
+                uint32_t block_num_to_read = get_block_by_index(vnode, block_index);
+                if(block_num_to_read == 0){
+                    /*  sparse block */
+                    memcpy(dest + has_read, 0, to_read);
+                }
+                else{
+                    /*  get the block content */
+                    pframe_t* block = NULL;
+                    int res = pframe_get(s5obj, block_num_to_read, &block);
+                    if(res < 0)
+                        return res;
+                    /*  do the reading */
+                    memcpy((char*)dest + has_read, (char*) block->pf_addr + offset, to_read);    
+                }
+                has_read += to_read;
+                to_read = 0;
+                offset = 0;
+            }
+            else{
+                uint32_t block_num_to_read = get_block_by_index(vnode, block_index);
+                if(block_num_to_read == 0){
+                    /*  sparse block */
+                    memcpy(dest + has_read, 0, remaining);
+                }
+                else{
+                    /*  get the block content */
+                    pframe_t* block = NULL;
+                    int res = pframe_get(s5obj, block_num_to_read, &block);
+                    if(res < 0)
+                        return res;
+                    /*  do the reading */
+                    memcpy((char*)dest + has_read, (char*) block->pf_addr + offset, remaining);    
+                }
+                has_read += remaining;
+                to_read -= remaining;
+                offset = 0;
+            }
+
+            if(to_read > 0){
+                /*  get next page.. */
+                block_index ++;
+                if(block_index == S5_MAX_FILE_BLOCKS)
+                    break;
+            }
+        }
+
+        return has_read;
 }
 
 /*
