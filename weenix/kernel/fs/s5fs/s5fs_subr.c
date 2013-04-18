@@ -63,8 +63,80 @@ static int s5_alloc_block(s5fs_t *);
 int
 s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_seek_to_block");
-        return -1;
+        KASSERT(vnode != NULL);
+
+        s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+
+        int nth_block = S5_DATA_BLOCK(seekptr);
+        uint32_t file_size =  inode -> s5_size;
+        int block_num = 0;
+        /* check whether in the indirect block */
+        if(nth_block < S5_NDIRECT_BLOCKS){
+            block_num = inode -> s5_direct_blocks[nth_block];
+            if(block_num == 0){
+                if(alloc != 0){
+                    /* sparse block */
+                    block_num = s5_alloc_block(s5);
+                    if(block_num < 0){
+                        /* allocation fails */
+                        return -ENOSPC;
+                    }
+                    inode -> s5_direct_blocks[nth_block] = block_num;           
+                    /*  the content of inode is modified */
+                    s5_dirty_inode(s5, inode);
+                }
+            }
+            return block_num;
+        }
+
+        else{
+            
+            /*  get content or modify the indirect block */
+            uint32_t index_in_indirect = nth_block - S5_NDIRECT_BLOCKS;
+            if(index_in_indirect >= S5_NIDIRECT_BLOCKS){
+                return -ENOSPC;
+            }
+
+            /*  indirect blocks */
+            int indirect_block = inode-> s5_indirect_block;
+            if(indirect_block == 0){
+                /* allocate the indirect block first */
+                indirect_block = s5_alloc_block(s5);
+                if(indirect_block < 0){
+                    return -ENOSPC;
+                }
+                inode -> s5_indirect_block = indirect_block;
+                s5_dirty_inode(s5, inode);
+            }
+
+            /*  get the contents of indirect block */
+            pframe_t* indirect_block_frame;
+            int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
+            if(res < 0){
+                return res;
+            }
+            pframe_pin(indirect_block_frame);
+            /*  get the block number in indirect block */
+            uint32_t* block_array = (uint32_t*)indirect_block_frame->pf_addr;
+            block_num = block_array[index_in_indirect];
+            if(block_num == 0){
+                if(alloc != 0){
+                    /*  allocate a new block */
+                    block_num = s5_alloc_block(s5);
+                    if(block_num < 0){
+                        /* allocation fails */
+                        return -ENOSPC;
+                    }
+                    block_array[index_in_indirect] = block_num;           
+                    pframe_dirty(indirect_block_frame);
+                }
+            }
+            pframe_unpin(indirect_block_frame);
+            return block_num;           
+        }
+        
 }
 
 
