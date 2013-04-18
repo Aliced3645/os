@@ -182,8 +182,57 @@ unlock_s5(s5fs_t *fs)
 int
 s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_write_file");
-        return -1;
+        /*  get the block, we need to write */
+        
+        KASSERT(vnode != NULL);
+        s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+
+        int block_num = s5_seek_to_block(vnode, seek, 1);
+        if(block_num < 0){
+            /*  seek exceeds the range */
+            return -ENOSPC;
+        }
+        /*  get the block frame to write to */
+        pframe_t* block_frame;
+        int res = pframe_get(s5obj, block_num, &block_frame);
+        if(res < 0) return res;
+
+        /*  get the start location (offset) in the block */
+        uint32_t offset = S5_DATA_OFFSET(seek);
+        uint32_t remaining = S5_BLOCK_SIZE - offset;
+        int written = 0;
+        /* look to see if remaining space coudl be written */
+        uint32_t to_write = len;
+        while(to_write > 0){
+            pframe_pin(block_frame);
+            if(to_write <= remaining){
+                memcpy( (char*) block_frame->pf_addr + offset, bytes + written, to_write);
+                written += to_write;
+                to_write = 0;
+                offset = 0;
+            }
+            else{
+                memcpy( (char*) block_frame->pf_addr + offset, bytes + written, remaining);
+                to_write -= remaining;
+                written += remaining;
+                offset = 0;
+            }
+            pframe_dirty(block_frame);
+            pframe_unpin(block_frame);
+            /*see whether we need to go to next block*/
+            if(to_write > 0){
+                block_num = s5_seek_to_block(vnode, seek + written, 1);
+                if(block_num < 0){
+                    /*  seek exceeds the range */
+                    return written;
+                }
+                int res = pframe_get(s5obj, block_num, &block_frame);
+                if(res < 0) return res;
+                remaining = S5_BLOCK_SIZE;
+            }
+        }
+        return written;
 }
 
 /*
