@@ -348,6 +348,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
             if(to_read > 0){
                 /*  get next page.. */
                 block_index ++;
+                remaining = S5_BLOCK_SIZE;
                 if(block_index == S5_MAX_FILE_BLOCKS)
                     break;
             }
@@ -376,8 +377,40 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
 static int
 s5_alloc_block(s5fs_t *fs)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_alloc_block");
-        return -1;
+        /*  get the super block frame */
+        s5_super_t* super_block = fs -> s5f_super;
+        KASSERT(S5_NBLKS_PER_FNODE > super_block->s5s_nfree);
+
+        struct mmobj *s5obj =  S5FS_TO_VMOBJ(fs);
+        lock_s5(fs);
+        if( ((int)super_block->s5s_free_blocks[S5_NBLKS_PER_FNODE - 1] == -1) && (super_block->s5s_nfree == (uint32_t)0)){
+            unlock_s5(fs);
+            return -ENOSPC;
+        }
+        int to_return; 
+        /*  get a free node */
+        if(super_block -> s5s_nfree != 0){
+            to_return = super_block->s5s_free_blocks[super_block->s5s_nfree -- ];
+        }
+        /*  move the next  */
+        else{
+            /*  copy the next here */
+            int next_block_num = super_block -> s5s_free_blocks[S5_NBLKS_PER_FNODE - 1];
+            pframe_t* next_block;
+            int res = pframe_get(s5obj, next_block_num, &next_block);
+            if(res < 0){
+                unlock_s5(fs);
+                return res;
+            }
+
+            /* copy the next free block list to the super block */
+            memcpy((void*)(super_block -> s5s_free_blocks), next_block->pf_addr, S5_NBLKS_PER_FNODE);
+            to_return = next_block_num;
+        }
+        /*dirty the super block*/
+        s5_dirty_super(fs);       
+        unlock_s5(fs);
+        return to_return;
 }
 
 
