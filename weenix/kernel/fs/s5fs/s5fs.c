@@ -205,10 +205,57 @@ s5fs_mount(struct fs *fs)
  * type of inode (i.e. regular, directory, char/block device, etc').
  *
  */
+
+/* vn_fs and vn_vno as been filled */
+
 static void
 s5fs_read_vnode(vnode_t *vnode)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_read_vnode");
+    KASSERT(vnode != NULL);
+    s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+    struct mmobj* s5obj = S5FS_TO_VMOBJ(s5);
+
+    /*  get the content of inode */
+    int inode_block = S5_INODE_BLOCK( vnode -> vn_vno);
+    int inode_offset = S5_INODE_OFFSET( vnode -> vn_vno);
+    
+    /* the the frame of inode */
+    pframe_t* inode_frame;
+    pframe_get(s5obj, inode_block, &inode_frame);
+    pframe_pin(inode_frame);
+
+    /* read inode the structure out */
+    s5_inode_t* inode = (s5_inode_t*)inode_frame -> pf_addr + inode_offset;
+    inode -> s5_linkcount ++;
+
+    /*  initialization */
+    uint16_t type = inode -> s5_type;
+    if(type == S5_TYPE_DATA){
+        vnode -> vn_ops = &s5fs_file_vops;
+        vnode -> vn_mode = S_IFREG;
+    }
+    else if(type == S5_TYPE_DIR){
+        vnode -> vn_ops = &s5fs_dir_vops;
+        vnode -> vn_mode = S_IFDIR;
+    }
+    else if(type == S5_TYPE_CHR){
+        devid_t dev =  inode -> s5_indirect_block;
+        vnode -> vn_devid = dev;
+        vnode -> vn_cdev = bytedev_lookup(dev);
+        vnode -> vn_mode = S_IFCHR;
+    }
+    else if(type == S5_TYPE_BLK){
+        devid_t dev = inode -> s5_indirect_block;
+        vnode -> vn_devid = dev;
+        vnode -> vn_bdev =  blockdev_lookup(dev);
+        vnode -> vn_mode = S_IFBLK;
+    }
+
+    vnode -> vn_len = inode -> s5_size;
+    vnode -> vn_i = inode;
+
+    pframe_unpin(inode_frame);
+
 }
 
 /*
