@@ -779,7 +779,49 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
 int
 s5_inode_blocks(vnode_t *vnode)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_inode_blocks");
-        return -1;
+
+        KASSERT(vnode != NULL);
+        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+        s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+
+        /* count */
+        int file_size = vnode -> vn_len;
+        /*  total possible number of blocks */
+        int total_possible = S5_DATA_BLOCK(file_size);
+        int block_count = 0;
+        int indirect_block = inode-> s5_indirect_block;
+        pframe_t* indirect_block_frame = NULL;
+        int i =0;
+        for(; i < total_possible; i ++){
+            if( i < S5_NDIRECT_BLOCKS){
+                if(inode->s5_direct_blocks[i] != 0)
+                    block_count ++;
+            }
+            else{
+                /*  get the frame of indirect block */
+                if(indirect_block == 0){
+                    /*  following are all sparse */
+                    break;
+                }
+                else{
+                    if(indirect_block_frame == NULL){
+                        int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
+                        if(res < 0){
+                            return res;
+                        }
+                        pframe_pin(indirect_block_frame);
+                    }
+                    uint32_t* block_array = (uint32_t*)indirect_block_frame->pf_addr;
+                    if( block_array[ i - S5_NDIRECT_BLOCKS] != 0)
+                        block_count ++;
+                }
+            }
+        }
+        
+        if(total_possible > S5_NDIRECT_BLOCKS && indirect_block != 0)
+            pframe_unpin(indirect_block_frame);
+
+        return block_count;
 }
 
