@@ -212,11 +212,12 @@ unlock_s5(s5fs_t *fs)
  *
  * You will need pframe_dirty(), pframe_get(), memcpy().
  */
+
 int
 s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
 {
         /*  get the block, we need to write */
-        
+
         KASSERT(vnode != NULL);
         s5fs_t* s5 = VNODE_TO_S5FS(vnode);
 
@@ -265,6 +266,7 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
 
         s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
         s5_dirty_inode(s5, inode);
+
         return written;
 }
 
@@ -734,8 +736,35 @@ s5_remove_dirent(vnode_t *vnode, const char *name, size_t namelen)
 int
 s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5_link");
-        return -1;
+        KASSERT(parent != NULL);
+        KASSERT(parent->vn_mode == S_IFDIR);
+        KASSERT(child != NULL);
+        KASSERT(name != NULL);
+        s5fs_t *s5 = VNODE_TO_S5FS(parent);
+        /*  if already exists? */
+        if(s5_find_dirent(parent, name, namelen) >= 0){
+            return -1;
+        }
+
+        /*  construct a dirent */
+        s5_dirent_t new_entry;
+        s5_inode_t* child_inode = VNODE_TO_S5INODE(child);
+        new_entry.s5d_inode = child_inode -> s5_number;
+        strncpy(new_entry.s5d_name, name, namelen);
+
+        /* insert the new entry */
+        int length = s5_write_file(parent, parent -> vn_len, (char*)& new_entry, namelen);
+        if(length != sizeof(s5_dirent_t)){
+            return length;
+        }
+    
+        /*  increase the child refcount */
+        s5_inode_t* child_ino = VNODE_TO_S5INODE(child);
+        child_ino->s5_linkcount --;
+        /* update the block where the deleted entry locates in */
+        s5_dirty_inode(s5, child_ino);
+        
+        return 0;
 }
 
 /*
