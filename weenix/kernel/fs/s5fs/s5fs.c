@@ -643,7 +643,7 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
         s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
         kmutex_unlock(&dir->vn_mutex);
 
-        return -1;
+        return 0;
 }
 
 /*
@@ -659,8 +659,36 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
 static int
 s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_rmdir");
-        return -1;
+        KASSERT(parent != NULL);
+        kmutex_lock(&parent -> vn_mutex);
+        s5_inode_t* parent_inode = VNODE_TO_S5INODE(parent);
+        fs_t* fs = parent -> vn_fs;
+        
+        /* confirm it has */
+        int target_ino = s5_find_dirent(parent, name, namelen);
+        if(target_ino < 0){
+            kmutex_unlock(&parent -> vn_mutex);
+            return -ENOENT;
+        }
+
+        /* actully remove..*/
+        vnode_t* target_vnode = vget(fs, target_ino);
+        KASSERT(target_vnode != NULL);
+        KASSERT(target_vnode -> vn_mode == S_IFDIR);
+        KASSERT(target_vnode -> vn_len == 2 * sizeof(s5_dirent_t));
+        vput(target_vnode);
+        
+        int res = s5_remove_dirent(parent, name , namelen);
+        if(res < 0){
+            kmutex_unlock(&parent -> vn_mutex);
+            return res;
+        }
+        
+        /*  decrement the count */
+        parent_inode -> s5_linkcount --;
+        s5_dirty_inode( VNODE_TO_S5FS(parent), parent_inode);
+        kmutex_unlock(&parent -> vn_mutex);
+        return 0;
 }
 
 
