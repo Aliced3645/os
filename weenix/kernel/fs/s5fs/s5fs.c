@@ -211,6 +211,7 @@ s5fs_mount(struct fs *fs)
 static void
 s5fs_read_vnode(vnode_t *vnode)
 {
+
     KASSERT(vnode != NULL);
     s5fs_t* s5 = VNODE_TO_S5FS(vnode);
     struct mmobj* s5obj = S5FS_TO_VMOBJ(s5);
@@ -253,7 +254,8 @@ s5fs_read_vnode(vnode_t *vnode)
 
     vnode -> vn_len = inode -> s5_size;
     vnode -> vn_i = inode;
-
+    
+    pframe_dirty(inode_frame);
     pframe_unpin(inode_frame);
 
 }
@@ -269,7 +271,31 @@ s5fs_read_vnode(vnode_t *vnode)
 static void
 s5fs_delete_vnode(vnode_t *vnode)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_delete_vnode");
+
+    /*  get the inode  */   
+    KASSERT(vnode != NULL);
+    s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+    struct mmobj* s5obj = S5FS_TO_VMOBJ(s5);
+
+    /*  get the content of inode */
+    int inode_block = S5_INODE_BLOCK( vnode -> vn_vno);
+    int inode_offset = S5_INODE_OFFSET( vnode -> vn_vno);
+    
+    /* the the frame of inode */
+    pframe_t* inode_frame;
+    pframe_get(s5obj, inode_block, &inode_frame);
+    pframe_pin(inode_frame);
+    
+    s5_inode_t* inode = (s5_inode_t*)inode_frame -> pf_addr + inode_offset;
+    inode -> s5_linkcount --;
+    
+    if(inode -> s5_linkcount == 0){
+        s5_free_inode(vnode);
+    }
+
+    pframe_dirty(inode_frame);
+    pframe_unpin(inode_frame);
+
 }
 
 /*
@@ -282,7 +308,11 @@ s5fs_delete_vnode(vnode_t *vnode)
 static int
 s5fs_query_vnode(vnode_t *vnode)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_query_vnode");
+    s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+    if(inode -> s5_linkcount >  1){
+        return 1;
+    }
+    else
         return 0;
 }
 
@@ -364,16 +394,21 @@ s5fs_umount(fs_t *fs)
 static int
 s5fs_read(vnode_t *vnode, off_t offset, void *buf, size_t len)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_read");
-        return -1;
+    kmutex_lock(&vnode -> vn_mutex);
+    int res = s5_read_file(vnode, offset, buf, len);
+    kmutex_unlock(&vnode -> vn_mutex);
+    return res;
 }
 
 /* Simply call s5_write_file. */
 static int
 s5fs_write(vnode_t *vnode, off_t offset, const void *buf, size_t len)
 {
-        NOT_YET_IMPLEMENTED("S5FS: s5fs_write");
-        return -1;
+    kmutex_lock(&vnode -> vn_mutex);
+    int res = s5_write_file(vnode, offset, buf, len);
+    kmutex_unlock(&vnode -> vn_mutex);
+    return res;
+
 }
 
 /* This function is deceptivly simple, just return the vnode's

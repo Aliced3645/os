@@ -300,6 +300,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
         s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
         s5fs_t* s5 = VNODE_TO_S5FS(vnode);
         struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
+        struct mmobj fileobj = vnode -> vn_mmobj;
 
         uint32_t block_index = S5_DATA_BLOCK(seek);
         if(block_index >= S5_MAX_FILE_BLOCKS)
@@ -321,7 +322,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
                     /*  get the block content */
                     pframe_t* block = NULL;
                     pframe_pin(block);
-                    int res = pframe_get(s5obj, block_num_to_read, &block);
+                    int res = pframe_get(&fileobj, block_index, &block);
                     if(res < 0)
                         return res;
                     /*  do the reading */
@@ -342,7 +343,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
                     /*  get the block content */
                     pframe_t* block = NULL;
                     pframe_pin(block);
-                    int res = pframe_get(s5obj, block_num_to_read, &block);
+                    int res = pframe_get(&fileobj, block_index, &block);
                     if(res < 0)
                         return res;
                     /*  do the reading */
