@@ -760,10 +760,9 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
         }
     
         /*  increase the child refcount */
-        s5_inode_t* child_ino = VNODE_TO_S5INODE(child);
-        child_ino->s5_linkcount --;
+        child_inode->s5_linkcount ++;
         /* update the block where the deleted entry locates in */
-        s5_dirty_inode(s5, child_ino);
+        s5_dirty_inode(s5, child_inode);
         
         return 0;
 }
