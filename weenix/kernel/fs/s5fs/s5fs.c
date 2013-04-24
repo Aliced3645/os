@@ -485,7 +485,6 @@ s5fs_mknod(vnode_t *dir, const char *name, size_t namelen, int mode, devid_t dev
     /*  get the child vnode */
     vnode_t* new_vnode = vget(fs, new_ino);
     s5_inode_t* new_inode = VNODE_TO_S5INODE(new_vnode);
-    new_inode -> s5_linkcount ++;
     int res = s5_link(dir, new_vnode, name, namelen);
     if(res < 0){
         kmutex_unlock(&dir->vn_mutex);   
@@ -592,7 +591,7 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
         kmutex_lock(&dir->vn_mutex);  
         s5_inode_t* dir_inode = VNODE_TO_S5INODE(dir);
         fs_t* fs = dir -> vn_fs;
-
+        
         int ino = s5_alloc_inode(fs, S5_TYPE_DIR, 0);
         if(ino < 0){
             kmutex_unlock(&dir->vn_mutex);
@@ -601,46 +600,32 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
         
         /* write entries to the new dir */
         vnode_t* new_dir_vnode = vget(fs, ino);
+        s5_inode_t* new_dir_inode = VNODE_TO_S5INODE(new_dir_vnode);
         /* construct the two entries */
         /* end1 for '.' */
-        s5_dirent_t ent1;
-        ent1.s5d_inode = ino;
-        strcpy(ent1.s5d_name, ".");
-        int res = s5_write_file(new_dir_vnode, 0 , (char*)&ent1, sizeof(s5_dirent_t));
+        int res = s5_link(new_dir_vnode, new_dir_vnode, ".", 1);
         if(res < 0){
             kmutex_unlock(&dir -> vn_mutex);
             return res;
         }
         
         /*  ent2 for '..' */
-        s5_dirent_t ent2;
-        ent2.s5d_inode = dir_inode -> s5_number;
-        strcpy(ent2.s5d_name, "..");
-        res = s5_write_file(new_dir_vnode, sizeof(s5_dirent_t), (char*)&ent2, sizeof(s5_dirent_t));
+        res = s5_link(new_dir_vnode, dir, "..", 2);
         if(res < 0){
             kmutex_unlock(&dir -> vn_mutex);
             return res;
         }
         
-        /*  write the new dir into the parent */
-        s5_dirent_t new_dir_ent;
-        new_dir_ent.s5d_inode = ino;
-        strncpy(new_dir_ent.s5d_name, name, namelen);
-        res = s5_write_file(dir, dir->vn_len, (char*)&new_dir_ent, sizeof(s5_dirent_t));
-        if(res < 0){
-            kmutex_unlock(&dir -> vn_mutex);
-            return res;
-        }
-        
+        /*  link the new dir into the parent */
         res = s5_link(dir, new_dir_vnode, name, namelen);
         if(res < 0){
             kmutex_unlock(&dir -> vn_mutex);
             return res;
         }
-
-
-        dir_inode -> s5_linkcount ++;
+        
+        new_dir_inode -> s5_linkcount ++;
         s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
+        s5_dirty_inode(VNODE_TO_S5FS(dir), new_dir_inode);
         kmutex_unlock(&dir->vn_mutex);
 
         return 0;
@@ -800,7 +785,6 @@ static int
 s5fs_dirtypage(vnode_t *vnode, off_t offset)
 {
         KASSERT(vnode != NULL);
-        kmutex_lock(&vnode -> vn_mutex);
         int res = s5_seek_to_block(vnode, offset, 0);
         if(res == 0){
             /* sparse block */
@@ -824,7 +808,6 @@ s5fs_dirtypage(vnode_t *vnode, off_t offset)
             }
             pframe_set_dirty(page_frame);
         }
-        kmutex_unlock(&vnode -> vn_mutex);
         return 0;
 }
 
@@ -835,7 +818,6 @@ static int
 s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
 {
     KASSERT(vnode != NULL);
-    kmutex_lock(&vnode -> vn_mutex);
     int block_num = s5_seek_to_block(vnode, offset, 1);
     if(block_num < 0){
         kmutex_unlock(&vnode -> vn_mutex);
@@ -845,7 +827,6 @@ s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;
     int res = blockdev -> bd_ops -> write_block(blockdev, pagebuf, block_num, 1);
-    kmutex_unlock(&vnode -> vn_mutex);
     return res;
 }
 
