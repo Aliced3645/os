@@ -762,7 +762,7 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
         strncpy(new_entry.s5d_name, name, namelen);
 
         /* insert the new entry */
-        int length = s5_write_file(parent, parent -> vn_len, (char*)& new_entry, namelen);
+        int length = s5_write_file(parent, parent -> vn_len, (char*)& new_entry, sizeof(s5_dirent_t));
         if(length != sizeof(s5_dirent_t)){
             return length;
         }

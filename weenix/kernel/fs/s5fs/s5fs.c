@@ -481,7 +481,16 @@ s5fs_mknod(vnode_t *dir, const char *name, size_t namelen, int mode, devid_t dev
 
     fs_t* fs = dir -> vn_fs;
     /*  has created a new inode for the file */
-    int new_ino = s5_alloc_inode(fs, mode, devid);
+    uint16_t type;
+    /*  convert mode to type */
+    if(mode == S_IFCHR){
+        type = S5_TYPE_CHR;
+    }
+    else if(mode == S_IFBLK){
+        type = S5_TYPE_BLK;
+    }
+
+    int new_ino = s5_alloc_inode(fs, type, devid);
     /*  get the child vnode */
     vnode_t* new_vnode = vget(fs, new_ino);
     s5_inode_t* new_inode = VNODE_TO_S5INODE(new_vnode);
