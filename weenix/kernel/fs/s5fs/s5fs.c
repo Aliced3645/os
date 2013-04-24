@@ -170,7 +170,7 @@ s5fs_mount(struct fs *fs)
         fs->fs_i = s5;
         fs->fs_op = &s5fs_fsops;
         fs->fs_root = vget(fs, s5->s5f_super->s5s_root_inode);
-
+        
         return 0;
 }
 
@@ -747,7 +747,6 @@ s5fs_stat(vnode_t *vnode, struct stat *ss)
 {
         KASSERT(vnode != NULL);
         KASSERT(ss != NULL);
-        
         kmutex_lock(&vnode -> vn_mutex);
         s5_inode_t* inode = VNODE_TO_S5INODE( vnode );
         ss -> st_mode = vnode -> vn_mode;
@@ -771,17 +770,26 @@ static int
 s5fs_fillpage(vnode_t *vnode, off_t offset, void *pagebuf)
 {
     KASSERT(vnode != NULL);
-    kmutex_lock(&vnode -> vn_mutex);
+    /* 
+    kmutex_init(& (vnode -> vn_mutex));
+    */
+    /*
+    kmutex_lock(& (vnode -> vn_mutex));
+    */
     int block_num = s5_seek_to_block(vnode, offset, 1);
     if(block_num < 0){
+        /*  
         kmutex_unlock(&vnode -> vn_mutex);
+        */
         return block_num;
     }
     
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;
-    int res = blockdev -> bd_ops -> write_block(blockdev, pagebuf, block_num, S5_BLOCK_SIZE);
-    kmutex_unlock(&vnode -> vn_mutex);
+    int res = blockdev -> bd_ops -> read_block(blockdev, pagebuf, block_num, 1);
+    /*  
+    kmutex_unlock(& (vnode -> vn_mutex));
+    */
     return res;
 }
 
@@ -848,7 +856,7 @@ s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
     
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;
-    int res = blockdev -> bd_ops -> read_block(blockdev, pagebuf, block_num, S5_BLOCK_SIZE);
+    int res = blockdev -> bd_ops -> write_block(blockdev, pagebuf, block_num, 1);
     kmutex_unlock(&vnode -> vn_mutex);
     return res;
 }

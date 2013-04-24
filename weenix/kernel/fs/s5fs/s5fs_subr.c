@@ -300,7 +300,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
         s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
         s5fs_t* s5 = VNODE_TO_S5FS(vnode);
         struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
-        struct mmobj fileobj = vnode -> vn_mmobj;
+        struct mmobj *fileobj = &vnode -> vn_mmobj;
 
         uint32_t block_index = S5_DATA_BLOCK(seek);
         if(block_index >= S5_MAX_FILE_BLOCKS)
@@ -321,11 +321,11 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
                 else{
                     /*  get the block content */
                     pframe_t* block = NULL;
-                    pframe_pin(block);
-                    int res = pframe_get(&fileobj, block_index, &block);
+                    int res = pframe_get(fileobj, block_index, &block);
                     if(res < 0)
                         return res;
                     /*  do the reading */
+                    pframe_pin(block);
                     memcpy((char*)dest + has_read, (char*) block->pf_addr + offset, to_read);    
                     pframe_unpin(block);
                 }
@@ -342,10 +342,10 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
                 else{
                     /*  get the block content */
                     pframe_t* block = NULL;
-                    pframe_pin(block);
-                    int res = pframe_get(&fileobj, block_index, &block);
+                    int res = pframe_get(fileobj, block_index, &block);
                     if(res < 0)
                         return res;
+                    pframe_pin(block);
                     /*  do the reading */
                     memcpy((char*)dest + has_read, (char*) block->pf_addr + offset, remaining);    
                     pframe_unpin(block);
@@ -626,7 +626,7 @@ s5_find_dirent(vnode_t *vnode, const char *name, size_t namelen)
         uint8_t buffer[sizeof(s5_dirent_t)];
         s5_dirent_t* entry = (s5_dirent_t*)buffer;
         int offset = 0;
-        while(1){
+        while(offset < vnode -> vn_len){
             int length = s5_read_file(vnode, offset, (char*)entry, sizeof(s5_dirent_t));
             if(length != sizeof(s5_dirent_t))
                 break;

@@ -270,7 +270,6 @@ pframe_fill(pframe_t *pf)
         pframe_clear_busy(pf);
 
         sched_broadcast_on(&pf->pf_waitq);
-
         return ret;
 }
 
@@ -311,11 +310,13 @@ start:
                 return -1;
             }
             int res = (pframe_fill(*result) < 0);
+            
             if(res < 0){
                 pframe_free( *result );
                 *result = NULL;
                 return res;
             }
+            
         }
         else{
             /*resident*/
