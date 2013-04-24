@@ -770,26 +770,14 @@ static int
 s5fs_fillpage(vnode_t *vnode, off_t offset, void *pagebuf)
 {
     KASSERT(vnode != NULL);
-    /* 
-    kmutex_init(& (vnode -> vn_mutex));
-    */
-    /*
-    kmutex_lock(& (vnode -> vn_mutex));
-    */
     int block_num = s5_seek_to_block(vnode, offset, 1);
     if(block_num < 0){
-        /*  
-        kmutex_unlock(&vnode -> vn_mutex);
-        */
         return block_num;
     }
     
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;
     int res = blockdev -> bd_ops -> read_block(blockdev, pagebuf, block_num, 1);
-    /*  
-    kmutex_unlock(& (vnode -> vn_mutex));
-    */
     return res;
 }
 
