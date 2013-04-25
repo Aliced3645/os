@@ -227,7 +227,9 @@ s5fs_read_vnode(vnode_t *vnode)
 
     /* read inode the structure out */
     s5_inode_t* inode = (s5_inode_t*)inode_frame -> pf_addr + inode_offset;
-    inode -> s5_linkcount ++;
+    /*  not sure */
+     inode -> s5_linkcount ++;
+    
 
     /*  initialization */
     uint16_t type = inode -> s5_type;
@@ -499,8 +501,10 @@ s5fs_mknod(vnode_t *dir, const char *name, size_t namelen, int mode, devid_t dev
         kmutex_unlock(&dir->vn_mutex);   
         return res;
     }
-    vput(new_vnode);
+    
     kmutex_unlock(&dir -> vn_mutex);
+    
+    vput(new_vnode);
     return 0;
 }
 
@@ -632,11 +636,13 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
             return res;
         }
         
-        new_dir_inode -> s5_linkcount ++;
+        new_dir_inode -> s5_linkcount  --;
         s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
         s5_dirty_inode(VNODE_TO_S5FS(dir), new_dir_inode);
         kmutex_unlock(&dir->vn_mutex);
-
+        
+        vput(new_dir_vnode);
+        
         return 0;
 }
 
@@ -668,7 +674,20 @@ s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
         /* actully remove..*/
         vnode_t* target_vnode = vget(fs, target_ino);
         KASSERT(target_vnode != NULL);
-        KASSERT(target_vnode -> vn_mode == S_IFDIR);
+
+        /*  some tests */
+        if(target_vnode -> vn_mode != S_IFDIR){
+            vput(target_vnode);
+            kmutex_unlock(&parent->vn_mutex);
+            return -ENOTDIR;
+        }
+        
+        if(target_vnode -> vn_len != 64){
+            vput(target_vnode);
+            kmutex_unlock(&parent -> vn_mutex);
+            return -ENOTEMPTY;
+        }
+
         KASSERT(target_vnode -> vn_len == 2 * sizeof(s5_dirent_t));
         vput(target_vnode);
         
@@ -723,7 +742,7 @@ s5fs_readdir(vnode_t *vnode, off_t offset, struct dirent *d)
 
         kmutex_unlock(&vnode -> vn_mutex);
     
-        return offset + sizeof(s5_dirent_t);
+        return sizeof(s5_dirent_t);
 }
 
 
@@ -885,6 +904,9 @@ calculate_refcounts(int *counts, vnode_t *vnode)
                          * refcount for this (an empty directory only has a
                          * link count of 1).
                          */
+                        if(offset == 160){
+                            int a = 1;
+                        }
                         if (0 != strcmp(d.d_name, ".")) {
                                 child = vget(vnode->vn_fs, d.d_ino);
                                 calculate_refcounts(counts, child);

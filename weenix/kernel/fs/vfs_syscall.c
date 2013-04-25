@@ -266,8 +266,8 @@ do_mknod(const char *path, int mode, unsigned devid)
         if(res == -ENOENT)
         /*  make the node */
             res = dir_vnode -> vn_ops -> mknod(dir_vnode, name, namelen, mode, devid);
-
-         vput(dir_vnode); 
+        
+        vput(dir_vnode); 
         if(res_vnode){
             vput(res_vnode);
         }

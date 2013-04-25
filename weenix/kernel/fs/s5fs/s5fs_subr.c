@@ -219,9 +219,11 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         /*  get the block, we need to write */
         KASSERT(vnode != NULL);
         s5fs_t* s5 = VNODE_TO_S5FS(vnode);
+        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
 
         /*  get the block frame to write to */
         struct mmobj* fileobj = &vnode -> vn_mmobj;
+        struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
         uint32_t block_index = S5_DATA_BLOCK(seek);
         if(block_index >= S5_MAX_FILE_BLOCKS)
             return 0;
@@ -265,12 +267,14 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         }
 
         /*  update the frame of vnode */
-        if(seek + written > vnode -> vn_len)
+        if(seek + written > vnode -> vn_len){
             vnode->vn_len = seek + written;
+              
+            inode->s5_size = seek+ written;
+        
+        }
 
-        s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
         s5_dirty_inode(s5, inode);
-
         return written;
 }
 
@@ -760,6 +764,7 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
         s5_inode_t* child_inode = VNODE_TO_S5INODE(child);
         new_entry.s5d_inode = child_inode -> s5_number;
         strncpy(new_entry.s5d_name, name, namelen);
+        new_entry.s5d_name[namelen] = '\0';
 
         /* insert the new entry */
         int length = s5_write_file(parent, parent -> vn_len, (char*)& new_entry, sizeof(s5_dirent_t));
