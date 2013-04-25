@@ -227,15 +227,31 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         uint32_t block_index = S5_DATA_BLOCK(seek);
         if(block_index >= S5_MAX_FILE_BLOCKS)
             return 0;
-        
+        int res;
+        pframe_t* block = NULL;
+
+        /*  if seek is greater than the file length, fill the sparse part */
+        /*  but won't fill the sparse blcoks */
+        if(seek > vnode->vn_len){
+            /*  if in the same block */
+            /*  fill the hole in the block */
+            if((int)block_index == S5_DATA_BLOCK(vnode->vn_len)){
+                res = pframe_get(fileobj, block_index, &block);
+                if(res < 0) return res;
+                int to_fill = seek - vnode->vn_len;
+                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), '\0' , to_fill);
+                res = vnode -> vn_ops -> dirtypage(vnode, seek );
+                if(res < 0) return res;
+            }
+
+        }
+
         /*  get the start location (offset) in the block */
         uint32_t offset = S5_DATA_OFFSET(seek);
         uint32_t remaining = S5_BLOCK_SIZE - offset;
         int written = 0;
         /* look to see if remaining space coudl be written */
         uint32_t to_write = len;
-        int res;
-        pframe_t* block = NULL;
         while(to_write > 0){
             res = pframe_get(fileobj, block_index, &block);
             if(res < 0)
@@ -313,12 +329,18 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
         uint32_t block_index = S5_DATA_BLOCK(seek);
         if(block_index >= S5_MAX_FILE_BLOCKS)
             return 0;
+    
+        /*  seek location exceeds the file length */
+        if(seek >= vnode->vn_len){
+            return 0;
+        }
+        
         /*  get the start location (offset) in the block */
         uint32_t offset = S5_DATA_OFFSET(seek);
         uint32_t remaining = S5_BLOCK_SIZE - offset;
         int has_read = 0;
-        uint32_t to_read = len;
-
+        uint32_t to_read = (uint32_t)seek + (uint32_t)len > (uint32_t)vnode -> vn_len ?  (uint32_t)vnode->vn_len - (uint32_t)seek : (uint32_t)len;  
+             
         while(to_read > 0){
             if(to_read <= remaining){
                 uint32_t block_num_to_read = get_block_by_index(vnode, block_index);
