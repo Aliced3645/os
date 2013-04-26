@@ -160,6 +160,7 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
                     block_num = s5_alloc_block(s5);
                     if(block_num < 0){
                         /* allocation fails */
+                        pframe_unpin(indirect_block_frame);
                         return -ENOSPC;
                     }
                     block_array[index_in_indirect] = block_num;           
@@ -238,10 +239,44 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
             if((int)block_index == S5_DATA_BLOCK(vnode->vn_len)){
                 res = pframe_get(fileobj, block_index, &block);
                 if(res < 0) return res;
+                pframe_pin(block);
                 int to_fill = seek - vnode->vn_len;
-                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), '\0' , to_fill);
-                res = vnode -> vn_ops -> dirtypage(vnode, seek );
+                res = pframe_dirty(block);
+                if(res < 0) {
+                    pframe_unpin(block);
+                    return res;
+                }                
+                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
+                pframe_unpin(block);
+            }
+            /* else fill the hole in "edge" blocks */
+            else{
+                /* front edge block */
+                int front_edge_block = S5_DATA_BLOCK(vnode->vn_len);
+                int to_fill = S5_BLOCK_SIZE - vnode->vn_len;
+                res = pframe_get(fileobj, front_edge_block, &block);
                 if(res < 0) return res;
+                pframe_pin(block);
+                res = pframe_dirty(block);
+                if(res < 0) {
+                    pframe_unpin(block);
+                    return res;
+                }   
+                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
+                pframe_unpin(block);                
+                /* end edge block */
+                int end_edge_block = S5_DATA_BLOCK(seek);
+                uint32_t offset = S5_DATA_OFFSET(seek);
+                res = pframe_get(fileobj, end_edge_block, &block);
+                pframe_pin(block);
+                res = pframe_dirty(block);
+                if(res < 0) {
+                    pframe_unpin(block);
+                    return res;
+                }
+                memset( (char*) block->pf_addr, 0 , offset);
+                pframe_unpin(block);
+                /*res = vnode -> vn_ops -> dirtypage(vnode, seek);*/
             }
 
         }
@@ -250,29 +285,36 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         uint32_t offset = S5_DATA_OFFSET(seek);
         uint32_t remaining = S5_BLOCK_SIZE - offset;
         int written = 0;
-        /* look to see if remaining space coudl be written */
+        /* look to see if remaining space could be written */
         uint32_t to_write = len;
         while(to_write > 0){
             res = pframe_get(fileobj, block_index, &block);
             if(res < 0)
                 return res;
-
+            pframe_pin(block);
             if(to_write <= remaining){
-                memcpy( (char*) block->pf_addr + offset, bytes + written, to_write);
-                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                res = pframe_dirty(block);
                 if(res < 0) return res;
+                memcpy((char*) block->pf_addr + offset, bytes + written, to_write);
+                /*  
+                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                */
                 written += to_write;
                 to_write = 0;
                 offset = 0;
             }
             else{
-                memcpy( (char*) block->pf_addr + offset, bytes + written, to_write);
-                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                res = pframe_dirty(block);
                 if(res < 0) return res;
+                memcpy( (char*) block->pf_addr + offset, bytes + written, to_write);
+                /*  
+                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
+                */
                 to_write -= remaining;
                 written += remaining;
                 offset = 0;
             }
+            pframe_unpin(block);
             /*see whether we need to go to next block*/
             if(to_write > 0){
                 block_index ++;
@@ -285,9 +327,7 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         /*  update the frame of vnode */
         if(seek + written > vnode -> vn_len){
             vnode->vn_len = seek + written;
-              
             inode->s5_size = seek+ written;
-        
         }
 
         s5_dirty_inode(s5, inode);
@@ -782,15 +822,17 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
         }
 
         /*  construct a dirent */
-        s5_dirent_t new_entry;
+        s5_dirent_t* new_entry = kmalloc(sizeof(s5_dirent_t));
+        memset(new_entry, 0, sizeof(s5_dirent_t));
         s5_inode_t* child_inode = VNODE_TO_S5INODE(child);
-        new_entry.s5d_inode = child_inode -> s5_number;
-        strncpy(new_entry.s5d_name, name, namelen);
-        new_entry.s5d_name[namelen] = '\0';
+        new_entry->s5d_inode = child_inode -> s5_number;
+        memcpy(new_entry->s5d_name, name, namelen);
+        new_entry->s5d_name[namelen] = '\0';
 
         /* insert the new entry */
-        int length = s5_write_file(parent, parent -> vn_len, (char*)& new_entry, sizeof(s5_dirent_t));
+        int length = s5_write_file(parent, parent -> vn_len, (char*)new_entry, sizeof(s5_dirent_t));
         if(length != sizeof(s5_dirent_t)){
+            kfree(new_entry);
             return length;
         }
     
@@ -798,7 +840,7 @@ s5_link(vnode_t *parent, vnode_t *child, const char *name, size_t namelen)
         child_inode->s5_linkcount ++;
         /* update the block where the deleted entry locates in */
         s5_dirty_inode(s5, child_inode);
-        
+        kfree(new_entry);
         return 0;
 }
 

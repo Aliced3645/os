@@ -384,7 +384,7 @@ clean:
 
         /* all pages of all vnodes belonging to this fs have been cleaned.
          * Now, uncache all of them: */
-        list_iterate_begin(&vnode_inuse_list, v, vnode_t, vn_link) {
+          list_iterate_begin(&vnode_inuse_list, v, vnode_t, vn_link) {
                 list_iterate_begin(&v->vn_mmobj.mmo_respages,
                                    p, pframe_t, pf_olink) {
                         KASSERT(!pframe_is_dirty(p));

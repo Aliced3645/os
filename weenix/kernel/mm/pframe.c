@@ -307,14 +307,15 @@ start:
             /*not resident, allocate new*/
             *result = pframe_alloc(o, pagenum);
             if(*result == NULL){
-                return -1;
+                pageoutd_wakeup();
+                goto start;
             }
             int res = (pframe_fill(*result) < 0);
             
             if(res < 0){
                 pframe_free( *result );
-                *result = NULL;
-                return res;
+                pageoutd_wakeup();
+                goto start;
             }
             
         }
@@ -456,6 +457,7 @@ pframe_dirty(pframe_t *pf)
         pframe_clear_busy(pf);
         sched_broadcast_on(&pf->pf_waitq);
 
+        pageoutd_wakeup();
         return ret;
 }
 
@@ -472,7 +474,7 @@ int
 pframe_clean(pframe_t *pf)
 {
         int ret;
-
+        
         KASSERT(pframe_is_dirty(pf) && "Cleaning page that isn't dirty!");
         KASSERT(pf->pf_pincount == 0 && "Cleaning a pinned page!");
 

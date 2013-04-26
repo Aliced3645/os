@@ -227,8 +227,8 @@ s5fs_read_vnode(vnode_t *vnode)
 
     /* read inode the structure out */
     s5_inode_t* inode = (s5_inode_t*)inode_frame -> pf_addr + inode_offset;
-    /*  not sure */
-     inode -> s5_linkcount ++;
+    
+    inode -> s5_linkcount ++;
     
 
     /*  initialization */
@@ -246,6 +246,7 @@ s5fs_read_vnode(vnode_t *vnode)
         vnode -> vn_devid = dev;
         vnode -> vn_cdev = bytedev_lookup(dev);
         vnode -> vn_mode = S_IFCHR;
+
     }
     else if(type == S5_TYPE_BLK){
         devid_t dev = inode -> s5_indirect_block;
@@ -257,9 +258,7 @@ s5fs_read_vnode(vnode_t *vnode)
     vnode -> vn_len = inode -> s5_size;
     vnode -> vn_i = inode;
     
-    pframe_dirty(inode_frame);
-    pframe_unpin(inode_frame);
-
+    s5_dirty_inode(s5,inode);
 }
 
 /*
@@ -286,18 +285,17 @@ s5fs_delete_vnode(vnode_t *vnode)
     /* the the frame of inode */
     pframe_t* inode_frame;
     pframe_get(s5obj, inode_block, &inode_frame);
-    pframe_pin(inode_frame);
     
-    s5_inode_t* inode = (s5_inode_t*)inode_frame -> pf_addr + inode_offset;
+    s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
     inode -> s5_linkcount --;
     
     if(inode -> s5_linkcount == 0){
         s5_free_inode(vnode);
     }
 
-    pframe_dirty(inode_frame);
     pframe_unpin(inode_frame);
-
+    
+    s5_dirty_inode(s5,inode);
 }
 
 /*
@@ -450,6 +448,11 @@ s5fs_create(vnode_t *dir, const char *name, size_t namelen, vnode_t **result)
     fs_t* fs = dir -> vn_fs;
     /*  has created a new inode for the file */
     int new_ino = s5_alloc_inode(fs, S5_TYPE_DATA, 0);
+    if(new_ino < 0){
+        kmutex_unlock(&dir->vn_mutex);
+        return new_ino;
+    }
+
     /*  get the child vnode */
     vnode_t* new_vnode = vget(fs, new_ino);
     s5_inode_t* new_inode = VNODE_TO_S5INODE(new_vnode);
@@ -493,6 +496,11 @@ s5fs_mknod(vnode_t *dir, const char *name, size_t namelen, int mode, devid_t dev
     }
 
     int new_ino = s5_alloc_inode(fs, type, devid);
+    if(new_ino < 0){
+        kmutex_unlock(&dir->vn_mutex);
+        return new_ino;
+    }
+
     /*  get the child vnode */
     vnode_t* new_vnode = vget(fs, new_ino);
     s5_inode_t* new_inode = VNODE_TO_S5INODE(new_vnode);
@@ -549,9 +557,12 @@ s5fs_link(vnode_t *src, vnode_t *dir, const char *name, size_t namelen)
     KASSERT(name != NULL);
     
     kmutex_lock(&dir->vn_mutex);
-    kmutex_lock(&src->vn_mutex);
+
+    if(dir -> vn_len >= (int) S5_MAX_FILE_SIZE){
+        kmutex_unlock(&dir->vn_mutex);
+        return -ENOSPC;
+    }
     int res = s5_link(dir, src, name, namelen);
-    kmutex_unlock(&src->vn_mutex);
     kmutex_unlock(&dir->vn_mutex);
 
     return res;
@@ -636,13 +647,13 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
             return res;
         }
         
-        new_dir_inode -> s5_linkcount  --;
+        new_dir_inode -> s5_linkcount --;
         s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
         s5_dirty_inode(VNODE_TO_S5FS(dir), new_dir_inode);
+        /* dirty the disk block */
+        
         kmutex_unlock(&dir->vn_mutex);
-        
         vput(new_dir_vnode);
-        
         return 0;
 }
 
@@ -738,7 +749,7 @@ s5fs_readdir(vnode_t *vnode, off_t offset, struct dirent *d)
         
         strcpy(d->d_name, read_dirent.s5d_name);
         d-> d_ino = read_dirent. s5d_inode;
-        d->d_off = offset + sizeof(s5_dirent_t);
+        d->d_off = offset;
 
         kmutex_unlock(&vnode -> vn_mutex);
     
@@ -783,14 +794,19 @@ static int
 s5fs_fillpage(vnode_t *vnode, off_t offset, void *pagebuf)
 {
     KASSERT(vnode != NULL);
-    int block_num = s5_seek_to_block(vnode, offset, 1);
+    int block_num = s5_seek_to_block(vnode, offset, 0);
+    int res = 0;
     if(block_num < 0){
         return block_num;
     }
-    
-    s5fs_t *s5 = VNODE_TO_S5FS(vnode);
-    blockdev_t* blockdev = s5 -> s5f_bdev;
-    int res = blockdev -> bd_ops -> read_block(blockdev, pagebuf, block_num, 1);
+    else if(block_num == 0){
+        memset(pagebuf, 0, PAGE_SIZE);
+    }
+    else{
+        s5fs_t *s5 = VNODE_TO_S5FS(vnode);
+        blockdev_t* blockdev = s5 -> s5f_bdev;
+        res = blockdev -> bd_ops -> read_block(blockdev, pagebuf, block_num, 1);
+    }
     return res;
 }
 
@@ -814,29 +830,32 @@ s5fs_dirtypage(vnode_t *vnode, off_t offset)
 {
         KASSERT(vnode != NULL);
         int res = s5_seek_to_block(vnode, offset, 0);
+        if(res < 0) return res;
+
         if(res == 0){
             /* sparse block */
             /*  attempt to allocate a free block */
             res = s5_seek_to_block(vnode, offset , 1);
             if(res < 0){
-                kmutex_unlock(&vnode -> vn_mutex);
                 return -ENOSPC;
             }
             s5_dirty_inode(VNODE_TO_S5FS(vnode), VNODE_TO_S5INODE(vnode));
         }
         else{
-            /*  set dirty */
+            /*  What makes me suffer!!! */
+            /*  
             s5fs_t* s5 = VNODE_TO_S5FS(vnode);
             struct mmobj *s5obj = S5FS_TO_VMOBJ(s5); 
             pframe_t* page_frame;
             res = pframe_get(s5obj, res, &page_frame);
             if(res < 0){
-                kmutex_unlock(&vnode -> vn_mutex);
                 return res;
             }
-            pframe_set_dirty(page_frame);
+            pframe_dirty(page_frame);
+            */
+            return 0;
         }
-        return 0;
+        return res;
 }
 
 /*
@@ -851,6 +870,7 @@ s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
         kmutex_unlock(&vnode -> vn_mutex);
         return block_num;
     }
+    
     
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;
