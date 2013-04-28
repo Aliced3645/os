@@ -146,9 +146,11 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
                 if(res < 0){
                     return res;
                 }
+                pframe_pin(indirect_block_frame);
                 memset(indirect_block_frame -> pf_addr, 0, PAGE_SIZE);
                 inode -> s5_indirect_block = indirect_block;
                 pframe_dirty(indirect_block_frame);
+                pframe_unpin(indirect_block_frame);
                 s5_dirty_inode(s5, inode);
             }
             else{
@@ -170,6 +172,18 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
                     pframe_unpin(indirect_block_frame);
                     return -ENOSPC;
                 }
+                
+                /*  set the new page content to zero */
+                pframe_t* new_block_frame;
+                int res = pframe_get(S5FS_TO_VMOBJ(s5), block_num, &new_block_frame);
+                if(res < 0){
+                    pframe_unpin(indirect_block_frame);
+                    return -1;
+                }
+                pframe_pin(new_block_frame);
+                memset(new_block_frame -> pf_addr, 0, PAGE_SIZE);
+                pframe_dirty(new_block_frame);
+                pframe_unpin(new_block_frame);
                 block_array[index_in_indirect] = block_num;           
                 pframe_dirty(indirect_block_frame);
             }
@@ -238,9 +252,9 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
 
         /*  if seek is greater than the file length, fill the sparse part */
         /*  but won't fill the sparse blcoks */
+        /*
         if(seek > vnode->vn_len){
-            /*  if in the same block */
-            /*  fill the hole in the block */
+              
             if((int)block_index == S5_DATA_BLOCK(vnode->vn_len)){
                 res = pframe_get(fileobj, block_index, &block);
                 if(res < 0) return res;
@@ -254,9 +268,9 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
                 memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
                 pframe_unpin(block);
             }
-            /* else fill the hole in "edge" blocks */
+            
+              
             else{
-                /* front edge block */
                 int front_edge_block = S5_DATA_BLOCK(vnode->vn_len);
                 int to_fill = S5_BLOCK_SIZE - vnode->vn_len;
                 res = pframe_get(fileobj, front_edge_block, &block);
@@ -269,7 +283,6 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
                 }   
                 memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
                 pframe_unpin(block);                
-                /* end edge block */
                 int end_edge_block = S5_DATA_BLOCK(seek);
                 uint32_t offset = S5_DATA_OFFSET(seek);
                 res = pframe_get(fileobj, end_edge_block, &block);
@@ -281,11 +294,10 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
                 }
                 memset( (char*) block->pf_addr, 0 , offset);
                 pframe_unpin(block);
-                /*res = vnode -> vn_ops -> dirtypage(vnode, seek);*/
             }
-
+          
         }
-
+        */
         /*  get the start location (offset) in the block */
         uint32_t offset = S5_DATA_OFFSET(seek);
         uint32_t remaining = S5_BLOCK_SIZE - offset;
@@ -294,16 +306,14 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         uint32_t to_write = len;
         while(to_write > 0){
             res = pframe_get(fileobj, block_index, &block);
-            if(res < 0)
-                return res;
+            if(res < 0){
+                return written;
+            }
             pframe_pin(block);
             if(to_write <= remaining){
                 res = pframe_dirty(block);
                 if(res < 0) return res;
                 memcpy((char*) block->pf_addr + offset, bytes + written, to_write);
-                /*  
-                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
-                */
                 written += to_write;
                 to_write = 0;
                 offset = 0;
@@ -312,9 +322,6 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
                 res = pframe_dirty(block);
                 if(res < 0) return res;
                 memcpy( (char*) block->pf_addr + offset, bytes + written, to_write);
-                /*  
-                res = vnode -> vn_ops -> dirtypage(vnode, seek + written );
-                */
                 to_write -= remaining;
                 written += remaining;
                 offset = 0;
@@ -385,7 +392,6 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
         uint32_t remaining = S5_BLOCK_SIZE - offset;
         int has_read = 0;
         uint32_t to_read = (uint32_t)seek + (uint32_t)len > (uint32_t)vnode -> vn_len ?  (uint32_t)vnode->vn_len - (uint32_t)seek : (uint32_t)len;  
-             
         while(to_read > 0){
             if(to_read <= remaining){
                 uint32_t block_num_to_read = get_block_by_index(vnode, block_index);
@@ -487,10 +493,10 @@ s5_alloc_block(s5fs_t *fs)
                 unlock_s5(fs);
                 return res;
             }
-
             /* copy the next free block list to the super block */
-            memcpy((void*)(super_block -> s5s_free_blocks), next_block->pf_addr, S5_NBLKS_PER_FNODE);
+            memcpy((void*)(super_block -> s5s_free_blocks), next_block->pf_addr, S5_NBLKS_PER_FNODE * sizeof(uint32_t));
             to_return = next_block_num;
+            super_block -> s5s_nfree = S5_NBLKS_PER_FNODE - 1;
         }
         /*dirty the super block*/
         s5_dirty_super(fs);       
@@ -699,22 +705,19 @@ s5_find_dirent(vnode_t *vnode, const char *name, size_t namelen)
         /*  read one by one.. */
         int res = 0;
         uint8_t buffer[sizeof(s5_dirent_t)];
-        s5_dirent_t* entry = (s5_dirent_t*)kmalloc(sizeof(s5_dirent_t));
-        memset(entry, 0, sizeof(s5_dirent_t));
+        s5_dirent_t* entry = (s5_dirent_t*)buffer;
         int offset = 0;
         while(offset < vnode -> vn_len){
             int length = s5_read_file(vnode, offset, (char*)entry, sizeof(s5_dirent_t));
             if(length != sizeof(s5_dirent_t))
                 break;
             /* compare */
-            if(name_match(name, entry -> s5d_name, namelen)){
+            if(strcmp(name, entry -> s5d_name) == 0){
                 res = entry -> s5d_inode;
-                kfree(entry);
                 return res;
             }
             offset += length;
         }
-        kfree(entry);
         return -ENOENT;
 }
 
@@ -757,7 +760,7 @@ s5_remove_dirent(vnode_t *vnode, const char *name, size_t namelen)
             if(length != sizeof(s5_dirent_t))
                 break;
             /* compare */
-            if(name_match(name, entry -> s5d_name, namelen)){
+            if(strcmp(name, entry -> s5d_name) == 0){
                 target_ino_num = entry -> s5d_inode;
                 break;
             }
@@ -775,13 +778,13 @@ s5_remove_dirent(vnode_t *vnode, const char *name, size_t namelen)
         vput(target_vno);
         
         /*  fetch the last */
-        int length = s5_read_file(vnode, vnode->vn_len - sizeof(s5_dirent_t), (char*)entry, sizeof(s5_dirent_t));
-        if(length != sizeof(s5_dirent_t))
-            return -1;
-        
-        /* write to the hole */
-        length = s5_write_file(vnode, offset, (char*)entry, sizeof(s5_dirent_t));
-        
+        if(offset != (int)(vnode->vn_len - sizeof(s5_dirent_t))){
+            int length = s5_read_file(vnode, vnode->vn_len - sizeof(s5_dirent_t), (char*)entry, sizeof(s5_dirent_t));
+            if(length != sizeof(s5_dirent_t))
+                return -1;
+            /* write to the hole */
+            length = s5_write_file(vnode, offset, (char*)entry, sizeof(s5_dirent_t));
+        }
 
         /*  see if the last block could be freed */
         int last_offset = S5_DATA_OFFSET(vnode->vn_len - sizeof(s5_dirent_t));
@@ -792,14 +795,15 @@ s5_remove_dirent(vnode_t *vnode, const char *name, size_t namelen)
             s5_free_block(s5, free_block_num);
         }
 
+        s5_inode_t* dir_inode = VNODE_TO_S5INODE(vnode);
         /*  update the directory vnode length */
         vnode->vn_len -= sizeof(s5_dirent_t);
-        
+        dir_inode -> s5_size -= sizeof(s5_dirent_t);
         /*  update the vnode content on disk.. */
-        s5_inode_t* dir_inode = VNODE_TO_S5INODE(vnode);
         s5_dirty_inode(s5, dir_inode);
 
         return 0;
+
 }
 
 /*
@@ -888,6 +892,7 @@ s5_inode_blocks(vnode_t *vnode)
                 }
                 else{
                     if(indirect_block_frame == NULL){
+                        block_count ++;
                         int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
                         if(res < 0){
                             return res;
