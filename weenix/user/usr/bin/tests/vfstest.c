@@ -651,7 +651,7 @@ vfstest_read(void)
         test_assert(0 == ret, "lseek(%d, 0, SEEK_SET) returned %d", fd, ret);
         read_fd(fd, READ_BUFSIZE, "hello");
         syscall_success(close(fd));
-
+        
         /* cannot read from a directory */
         syscall_success(mkdir("dir01", 0));
         syscall_success(fd = open("dir01", O_RDONLY, 0));
@@ -661,6 +661,9 @@ vfstest_read(void)
         /* Can seek to beginning, middle, and end of file */
         syscall_success(fd = open("file02", O_RDWR | O_CREAT, 0));
         syscall_success(write(fd, "hello", 5));
+
+
+        
 
 #define test_lseek(expr, res)                                                           \
         do {                                                                            \
@@ -734,6 +737,27 @@ vfstest_read(void)
         test_assert(0 == memcmp(buf, "hello\0\0\0\0\0again", 15), "unexpected data read");
         syscall_success(close(fd));
 
+        /*  s5fs test */
+        create_file("file05");
+        syscall_success(fd = open("file05", O_RDWR, 0));
+        syscall_success(write(fd, "hello", 5));
+        test_lseek(lseek(fd, 120000, SEEK_SET), 120000);
+        /*  in the indirect block */
+        syscall_success(write(fd, "goodbye", 7));
+        syscall_success(stat("file05", &s));
+        test_assert(s.st_size == 120007, "actual size: %d", s.st_size);
+        test_lseek(lseek(fd, 120000, SEEK_SET), 120000);
+        read_fd(fd, READ_BUFSIZE, "goodbye");
+        
+        test_lseek(lseek(fd, 12000000, SEEK_SET), 12000000);
+        int a = write(fd, "goodbye", 7);
+
+        syscall_success(close(fd));
+        
+        /*  test inode thirsty */
+               
+
+
         syscall_success(chdir(".."));
 }
 
@@ -780,6 +804,14 @@ vfstest_getdents(void)
 /*  self-made s5fs test cases */
 static void
 vfstest_s5fs(void){
+    int fd, ret;
+    char buf[READ_BUFSIZE];
+    struct stat s;
+
+    syscall_success(mkdir("s5fs", 0777));
+    syscall_success(chdir("s5fs"));
+
+
 
 }
 
@@ -969,3 +1001,11 @@ int vfstest_main(int argc, char **argv)
 
         return 0;
 }
+
+
+int s5fstest_main(int argc, char **argv){
+    
+
+    return 0;
+}
+
