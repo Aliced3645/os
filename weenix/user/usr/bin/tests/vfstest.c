@@ -777,6 +777,13 @@ vfstest_getdents(void)
         syscall_success(chdir(".."));
 }
 
+/*  self-made s5fs test cases */
+static void
+vfstest_s5fs(void){
+
+}
+
+
 #ifdef __VM__
 /*
  * Tests link(), rename(), and mmap() (and munmap, and brk).
@@ -945,7 +952,10 @@ int vfstest_main(int argc, char **argv)
         vfstest_open();  
         vfstest_read(); 
         vfstest_getdents(); 
-        
+
+        /*  
+        vfstest_s5fs();
+        */
 #ifdef __VM__
         vfstest_s5fs_vm();
 #endif

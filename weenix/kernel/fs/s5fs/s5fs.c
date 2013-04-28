@@ -610,7 +610,6 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
 {
         KASSERT(dir != NULL);
         KASSERT(name != NULL);
-        
         /* create a new directory inode */
         kmutex_lock(&dir->vn_mutex);  
         s5_inode_t* dir_inode = VNODE_TO_S5INODE(dir);

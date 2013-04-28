@@ -301,7 +301,7 @@ do_mkdir(const char *path)
                 vput(dir_vnode);
             return res;
         }
-
+        
         res = lookup(dir_vnode, name, namelen, &res_vnode);
         if(res == 0 || res != -ENOENT){
             if(dir_vnode != NULL)

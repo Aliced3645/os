@@ -701,7 +701,9 @@ s5_find_dirent(vnode_t *vnode, const char *name, size_t namelen)
         KASSERT(vnode != NULL);
         KASSERT(name != NULL);
         KASSERT(vnode -> vn_mode == S_IFDIR);
-
+        
+        if(namelen == 0)
+            return 0;
         /*  read one by one.. */
         int res = 0;
         uint8_t buffer[sizeof(s5_dirent_t)];
@@ -712,7 +714,8 @@ s5_find_dirent(vnode_t *vnode, const char *name, size_t namelen)
             if(length != sizeof(s5_dirent_t))
                 break;
             /* compare */
-            if(strcmp(name, entry -> s5d_name) == 0){
+            /*  if(name_match(name, entry -> s5d_name, namelen)){ */
+            if( strcmp(name, entry -> s5d_name) == 0){ 
                 res = entry -> s5d_inode;
                 return res;
             }
