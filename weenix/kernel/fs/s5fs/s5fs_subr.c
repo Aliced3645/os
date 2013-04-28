@@ -134,43 +134,48 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
 
             /*  indirect blocks */
             int indirect_block = inode-> s5_indirect_block;
+            pframe_t* indirect_block_frame;
             if(indirect_block == 0){
                 /* allocate the indirect block first */
                 indirect_block = s5_alloc_block(s5);
                 if(indirect_block < 0){
                     return -ENOSPC;
                 }
+                /*  clean the content of indirect block */
+                int res = pframe_get(S5FS_TO_VMOBJ(s5), indirect_block ,&indirect_block_frame);
+                if(res < 0){
+                    return res;
+                }
+                memset(indirect_block_frame -> pf_addr, 0, PAGE_SIZE);
                 inode -> s5_indirect_block = indirect_block;
+                pframe_dirty(indirect_block_frame);
                 s5_dirty_inode(s5, inode);
             }
-
-            /*  get the contents of indirect block */
-            pframe_t* indirect_block_frame;
-            int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
-            if(res < 0){
-                return res;
+            else{
+                /*  get the contents of indirect block */
+                int res = pframe_get(s5obj, indirect_block, &indirect_block_frame);
+                if(res < 0){
+                    return res;
+                }
             }
             pframe_pin(indirect_block_frame);
             /*  get the block number in indirect block */
             uint32_t* block_array = (uint32_t*)indirect_block_frame->pf_addr;
             block_num = block_array[index_in_indirect];
-            if(block_num == 0){
-                if(alloc != 0){
-                    /*  allocate a new block */
-                    block_num = s5_alloc_block(s5);
-                    if(block_num < 0){
-                        /* allocation fails */
-                        pframe_unpin(indirect_block_frame);
-                        return -ENOSPC;
-                    }
-                    block_array[index_in_indirect] = block_num;           
-                    pframe_dirty(indirect_block_frame);
+            if(block_num == 0 && alloc != 0){
+                /*  allocate a new block */
+                block_num = s5_alloc_block(s5);
+                if(block_num < 0){
+                    /* allocation fails */
+                    pframe_unpin(indirect_block_frame);
+                    return -ENOSPC;
                 }
+                block_array[index_in_indirect] = block_num;           
+                pframe_dirty(indirect_block_frame);
             }
             pframe_unpin(indirect_block_frame);
             return block_num;           
         }
-        
 }
 
 
