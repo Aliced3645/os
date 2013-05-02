@@ -285,16 +285,16 @@ s5fs_delete_vnode(vnode_t *vnode)
     /* the the frame of inode */
     pframe_t* inode_frame;
     pframe_get(s5obj, inode_block, &inode_frame);
-    
+    pframe_unpin(inode_frame);
     s5_inode_t* inode = VNODE_TO_S5INODE(vnode);
+    
     inode -> s5_linkcount --;
     
     if(inode -> s5_linkcount == 0){
         s5_free_inode(vnode);
     }
 
-    pframe_unpin(inode_frame);
-    
+        
     s5_dirty_inode(s5,inode);
 }
 
@@ -422,11 +422,6 @@ s5fs_write(vnode_t *vnode, off_t offset, const void *buf, size_t len)
 static int
 s5fs_mmap(vnode_t *file, vmarea_t *vma, mmobj_t **ret)
 {
-    KASSERT(file != NULL);
-    KASSERT(ret != NULL);
-    kmutex_lock(&file -> vn_mutex);
-    *ret = &file -> vn_mmobj;
-    kmutex_unlock(&file -> vn_mutex);
     return 0;
 }
 
@@ -446,6 +441,13 @@ s5fs_create(vnode_t *dir, const char *name, size_t namelen, vnode_t **result)
 
     kmutex_lock(&dir->vn_mutex);   
     fs_t* fs = dir -> vn_fs;
+    
+    /*  whether the dir has been filled? */
+    if(dir->vn_len >= (int)S5_MAX_FILE_SIZE){
+        kmutex_unlock(&dir -> vn_mutex);
+        return -ENOSPC;
+    }
+
     /*  has created a new inode for the file */
     int new_ino = s5_alloc_inode(fs, S5_TYPE_DATA, 0);
     if(new_ino < 0){
@@ -456,7 +458,7 @@ s5fs_create(vnode_t *dir, const char *name, size_t namelen, vnode_t **result)
     /*  get the child vnode */
     vnode_t* new_vnode = vget(fs, new_ino);
     s5_inode_t* new_inode = VNODE_TO_S5INODE(new_vnode);
-    new_inode -> s5_linkcount ++;
+    /* s5_link will increase the linkcount of the child */
     int res = s5_link(dir, new_vnode, name, namelen);
     if(res < 0){
         kmutex_unlock(&dir -> vn_mutex);
@@ -510,9 +512,9 @@ s5fs_mknod(vnode_t *dir, const char *name, size_t namelen, int mode, devid_t dev
         return res;
     }
     
-    kmutex_unlock(&dir -> vn_mutex);
-    
     vput(new_vnode);
+    kmutex_unlock(&dir -> vn_mutex);
+
     return 0;
 }
 
@@ -610,6 +612,11 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
 {
         KASSERT(dir != NULL);
         KASSERT(name != NULL);
+
+        if(dir->vn_len >= (int) S5_MAX_FILE_SIZE){
+            return -ENOSPC;
+        }
+
         /* create a new directory inode */
         kmutex_lock(&dir->vn_mutex);  
         s5_inode_t* dir_inode = VNODE_TO_S5INODE(dir);
@@ -646,9 +653,9 @@ s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen)
             return res;
         }
         
-        new_dir_inode -> s5_linkcount --;
-        s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
-        s5_dirty_inode(VNODE_TO_S5FS(dir), new_dir_inode);
+        new_dir_inode -> s5_linkcount --; 
+       /*   s5_dirty_inode(VNODE_TO_S5FS(dir), dir_inode);
+        s5_dirty_inode(VNODE_TO_S5FS(dir), new_dir_inode); */
         /* dirty the disk block */
         
         kmutex_unlock(&dir->vn_mutex);
@@ -698,9 +705,6 @@ s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
             return -ENOTEMPTY;
         }
 
-        KASSERT(target_vnode -> vn_len == 2 * sizeof(s5_dirent_t));
-        vput(target_vnode);
-        
         int res = s5_remove_dirent(parent, name , namelen);
         if(res < 0){
             kmutex_unlock(&parent -> vn_mutex);
@@ -708,8 +712,10 @@ s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
         }
         
         /*  decrement the count */
+        s5_inode_t* target_inode = VNODE_TO_S5INODE(target_vnode);
+        KASSERT(target_vnode -> vn_len == 2 * sizeof(s5_dirent_t));
+        vput(target_vnode);
         parent_inode -> s5_linkcount --;
-        s5_dirty_inode( VNODE_TO_S5FS(parent), parent_inode);
         kmutex_unlock(&parent -> vn_mutex);
         return 0;
 }
@@ -869,7 +875,6 @@ s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
         kmutex_unlock(&vnode -> vn_mutex);
         return block_num;
     }
-    
     
     s5fs_t *s5 = VNODE_TO_S5FS(vnode);
     blockdev_t* blockdev = s5 -> s5f_bdev;

@@ -738,11 +738,14 @@ vfstest_read(void)
         syscall_success(close(fd));
 
         /*  s5fs test */
+        
         create_file("file05");
         syscall_success(fd = open("file05", O_RDWR, 0));
         syscall_success(write(fd, "hello", 5));
         test_lseek(lseek(fd, 120000, SEEK_SET), 120000);
+        
         /*  in the indirect block */
+        
         syscall_success(write(fd, "goodbye", 7));
         syscall_success(stat("file05", &s));
         test_assert(s.st_size == 120007, "actual size: %d", s.st_size);
@@ -755,8 +758,7 @@ vfstest_read(void)
         syscall_success(close(fd));
         
         /*  test inode thirsty */
-               
-
+                      
 
         syscall_success(chdir(".."));
 }

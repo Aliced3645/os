@@ -250,54 +250,6 @@ s5_write_file(vnode_t *vnode, off_t seek, const char *bytes, size_t len)
         int res;
         pframe_t* block = NULL;
 
-        /*  if seek is greater than the file length, fill the sparse part */
-        /*  but won't fill the sparse blcoks */
-        /*
-        if(seek > vnode->vn_len){
-              
-            if((int)block_index == S5_DATA_BLOCK(vnode->vn_len)){
-                res = pframe_get(fileobj, block_index, &block);
-                if(res < 0) return res;
-                pframe_pin(block);
-                int to_fill = seek - vnode->vn_len;
-                res = pframe_dirty(block);
-                if(res < 0) {
-                    pframe_unpin(block);
-                    return res;
-                }                
-                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
-                pframe_unpin(block);
-            }
-            
-              
-            else{
-                int front_edge_block = S5_DATA_BLOCK(vnode->vn_len);
-                int to_fill = S5_BLOCK_SIZE - vnode->vn_len;
-                res = pframe_get(fileobj, front_edge_block, &block);
-                if(res < 0) return res;
-                pframe_pin(block);
-                res = pframe_dirty(block);
-                if(res < 0) {
-                    pframe_unpin(block);
-                    return res;
-                }   
-                memset( (char*) block->pf_addr + S5_DATA_OFFSET(vnode->vn_len), 0 , to_fill);
-                pframe_unpin(block);                
-                int end_edge_block = S5_DATA_BLOCK(seek);
-                uint32_t offset = S5_DATA_OFFSET(seek);
-                res = pframe_get(fileobj, end_edge_block, &block);
-                pframe_pin(block);
-                res = pframe_dirty(block);
-                if(res < 0) {
-                    pframe_unpin(block);
-                    return res;
-                }
-                memset( (char*) block->pf_addr, 0 , offset);
-                pframe_unpin(block);
-            }
-          
-        }
-        */
         /*  get the start location (offset) in the block */
         uint32_t offset = S5_DATA_OFFSET(seek);
         uint32_t remaining = S5_BLOCK_SIZE - offset;
@@ -397,7 +349,7 @@ s5_read_file(struct vnode *vnode, off_t seek, char *dest, size_t len)
                 uint32_t block_num_to_read = get_block_by_index(vnode, block_index);
                 if(block_num_to_read == 0){
                     /*  sparse block */
-                    memcpy(dest + has_read, 0, to_read);
+                    memset((char*)dest + has_read, 0, to_read);
                 }
                 else{
                     /*  get the block content */

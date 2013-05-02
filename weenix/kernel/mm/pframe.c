@@ -426,8 +426,13 @@ pframe_unpin(pframe_t *pf)
         list_insert_tail(&alloc_list, &pf->pf_link);
         nallocated ++;
         npinned --;
+        pframe_clear_busy(pf);
+
     }
-    pframe_clear_busy(pf);
+    else{
+        pageoutd_wakeup();       
+        pframe_clear_busy(pf);
+    }
 }
 
 /*
