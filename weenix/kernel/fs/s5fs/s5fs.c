@@ -711,7 +711,6 @@ s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
             return res;
         }
         
-        /*  decrement the count */
         s5_inode_t* target_inode = VNODE_TO_S5INODE(target_vnode);
         KASSERT(target_vnode -> vn_len == 2 * sizeof(s5_dirent_t));
         vput(target_vnode);
@@ -870,9 +869,8 @@ static int
 s5fs_cleanpage(vnode_t *vnode, off_t offset, void *pagebuf)
 {
     KASSERT(vnode != NULL);
-    int block_num = s5_seek_to_block(vnode, offset, 1);
+    int block_num = s5_seek_to_block(vnode, offset, 0);
     if(block_num < 0){
-        kmutex_unlock(&vnode -> vn_mutex);
         return block_num;
     }
     

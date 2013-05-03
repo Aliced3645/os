@@ -174,7 +174,7 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
                 }
                 
                 /*  set the new page content to zero */
-                pframe_t* new_block_frame;
+                /*  pframe_t* new_block_frame;
                 int res = pframe_get(S5FS_TO_VMOBJ(s5), block_num, &new_block_frame);
                 if(res < 0){
                     pframe_unpin(indirect_block_frame);
@@ -183,7 +183,7 @@ s5_seek_to_block(vnode_t *vnode, off_t seekptr, int alloc)
                 pframe_pin(new_block_frame);
                 memset(new_block_frame -> pf_addr, 0, PAGE_SIZE);
                 pframe_dirty(new_block_frame);
-                pframe_unpin(new_block_frame);
+                pframe_unpin(new_block_frame);*/
                 block_array[index_in_indirect] = block_num;           
                 pframe_dirty(indirect_block_frame);
             }
